@@ -391,9 +391,11 @@ def build_7_day_plan(camp_agg_strat: pd.DataFrame) -> pd.DataFrame:
 
 def build_control_panel(camp_agg_strat: pd.DataFrame) -> pd.DataFrame:
     df = camp_agg_strat.copy()
+    # Ordem de leitura: diagnostico -> acao -> confianca -> justificativa -> impacto
     base_cols = [
         "Nome","Orçamento","ACOS Objetivo","ROAS_Objetivo","ROAS_Real",
-        "Perdidas_Orc","Perdidas_Class","Confianca_Dado","Motivo","Impacto_Estimado_R$","Acao_Recomendada"
+        "Perdidas_Orc","Perdidas_Class",
+        "Acao_Recomendada","Confianca_Dado","Motivo","Impacto_Estimado_R$",
     ]
     cols = [c for c in base_cols if c in df.columns]
     panel = df[cols].copy()
