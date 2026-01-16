@@ -2,6 +2,63 @@ import streamlit as st
 from datetime import datetime
 import ml_report as ml
 
+
+# --------------------------------------------------------------------
+# Helpers de exibicao
+# Padroniza colunas de dinheiro com prefixo "R$" sem alterar os dados.
+# --------------------------------------------------------------------
+import pandas as pd
+
+def _is_money_col(col_name: str) -> bool:
+    c = str(col_name).strip().lower()
+    # casos comuns no app
+    if "receita proj" in c:
+        return True
+    if "potencial_receita" in c or "potencial receita" in c:
+        return True
+    if "orcamento" in c or "orçamento" in c:
+        return True
+    if "investimento" in c:
+        return True
+    if "vendas_brutas" in c or "vendas brutas" in c:
+        return True
+    # evita pegar metricas que nao sao dinheiro
+    if c == "receita" or c.startswith("receita "):
+        return True
+    return False
+
+def show_df(df, **kwargs):
+    """Mostra dataframe no Streamlit com colunas monetarias formatadas com R$.
+    Nao altera o df original e nao mexe em percentuais.
+    """
+    # Se ja for um Styler, nao mexe
+    try:
+        from pandas.io.formats.style import Styler
+        if isinstance(df, Styler):
+            return show_df(df, **kwargs)
+    except Exception:
+        pass
+
+    if df is None:
+        return st.info("Sem dados para exibir.")
+
+    if not isinstance(df, pd.DataFrame):
+        return show_df(df, **kwargs)
+
+    if df.empty:
+        return show_df(df, **kwargs)
+
+    _df = df.copy()
+    fmt = {}
+    for c in _df.columns:
+        if _is_money_col(c):
+            fmt[c] = "R$ {:,.2f}"
+
+    if fmt:
+        return show_df(_df.style.format(fmt), **kwargs)
+
+    return show_df(_df, **kwargs)
+
 st.set_page_config(page_title="ML Ads - Dashboard & Relatorio", layout="wide")
 st.title("Mercado Livre Ads - Dashboard e Relatorio Automatico (Estrategico)")
 
@@ -114,32 +171,32 @@ with tab1:
         _df_tmp = high["Locomotivas"].copy()
         _num_cols = _df_tmp.select_dtypes(include=["number"]).columns
         _df_tmp[_num_cols] = _df_tmp[_num_cols].round(2)
-        st.dataframe(_df_tmp, use_container_width=True)
+        show_df(_df_tmp, use_container_width=True)
     with cB:
         st.write("Minas Limitadas (ROAS alto + perda por orcamento)")
         _df_tmp = high["Minas"].copy()
         _num_cols = _df_tmp.select_dtypes(include=["number"]).columns
         _df_tmp[_num_cols] = _df_tmp[_num_cols].round(2)
-        st.dataframe(_df_tmp, use_container_width=True)
+        show_df(_df_tmp, use_container_width=True)
     st.divider()
 
     st.subheader("Plano de Acao - 7 dias")
-    st.dataframe(plan7, use_container_width=True)
+    show_df(plan7, use_container_width=True)
 
     st.divider()
 
     st.subheader("Painel de Controle Geral (todas as campanhas)")
-    st.dataframe(panel, use_container_width=True)
+    show_df(panel, use_container_width=True)
 
     st.divider()
 
     cC, cD = st.columns(2)
     with cC:
         st.subheader("Campanhas para PAUSAR/REVISAR")
-        st.dataframe(pause, use_container_width=True)
+        show_df(pause, use_container_width=True)
     with cD:
         st.subheader("Anuncios para ENTRAR em Ads (organico forte)")
-        st.dataframe(enter, use_container_width=True)
+        show_df(enter, use_container_width=True)
 
 with tab2:
     st.subheader("Gerar relatorio final (Excel)")
