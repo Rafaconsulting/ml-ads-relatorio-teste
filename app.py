@@ -97,13 +97,15 @@ def replace_acos_obj_with_roas_obj(df: pd.DataFrame) -> pd.DataFrame:
 
     df2 = df.copy()
 
-    for col in df2.columns:
+    for col in list(df2.columns):
         lc = str(col).strip().lower()
+
+        # pega qualquer variacao de ACOS objetivo
         if "acos" in lc and "objetivo" in lc:
             ser = pd.to_numeric(df2[col], errors="coerce")
             df2[col] = ser.map(_acos_value_to_roas)
             df2 = df2.rename(columns={col: "ROAS objetivo"})
-            break
+            break  # garante uma coluna unica
 
     return df2
 
