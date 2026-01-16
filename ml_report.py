@@ -277,13 +277,6 @@ def build_opportunity_highlights(camp_agg_strat: pd.DataFrame) -> dict:
         return receita * factor
 
     minas["Potencial_Receita"] = minas.apply(proj, axis=1)
-
-    # Projecoes de receita para campanhas classificadas como 'Minas Limitadas'
-    # Cenarios: +30% e +60% de orcamento. Premissa: ROAS constante, receita escala linearmente.
-    if "Receita" in minas.columns:
-        minas["Receita"] = pd.to_numeric(minas["Receita"], errors="coerce").fillna(0.0)
-        minas["Receita proj (+30% orcamento)"] = minas["Receita"] * 1.30
-        minas["Receita proj (+60% orcamento)"] = minas["Receita"] * 1.60
     return {"Locomotivas": locomotivas, "Minas": minas}
 
 
@@ -358,25 +351,23 @@ def build_tables(
 
     invest_total = float(pd.to_numeric(camp_agg["Investimento"], errors="coerce").fillna(0).sum())
     receita_total = float(pd.to_numeric(camp_agg["Receita"], errors="coerce").fillna(0).sum())
-    # TACOS: % do faturamento total da conta investido em Ads.
-    # Fonte do faturamento total: receita total do relatorio de desempenho (organico/publicacoes).
-    receita_conta_total = float(pd.to_numeric(org.get("Vendas_Brutas"), errors="coerce").fillna(0).sum()) if (org is not None and "Vendas_Brutas" in org.columns) else 0.0
-    if not receita_conta_total:
-        # fallback seguro: usa a propria receita de Ads caso o arquivo organico nao tenha a coluna esperada.
-        receita_conta_total = receita_total
-    tacos = (invest_total / receita_conta_total) if receita_conta_total else 0.0
     vendas_total = int(pd.to_numeric(camp_agg["Vendas"], errors="coerce").fillna(0).sum())
     roas_total = (receita_total / invest_total) if invest_total else 0.0
+
+    # TACOS = Investimento Ads / Faturamento total da conta.
+    # Faturamento total da conta vem do relatorio organico (publicacoes), coluna Vendas_Brutas.
+    faturamento_total = float(pd.to_numeric(org.get("Vendas_Brutas"), errors="coerce").fillna(0).sum())
+    tacos = (invest_total / faturamento_total) if faturamento_total else 0.0
 
     kpis = {
         "Campanhas únicas": int(camp_agg["Nome"].nunique()),
         "IDs patrocinados únicos": int(pat["ID"].nunique()),
         "Investimento Ads (R$)": invest_total,
         "Receita Ads (R$)": receita_total,
-        "Receita Total Conta (R$)": receita_conta_total,
-        "TACOS": tacos,
         "Vendas Ads": vendas_total,
         "ROAS": roas_total,
+        "TACOS": tacos,
+        "Faturamento total (R$)": faturamento_total,
     }
 
     return kpis, pause, enter, scale, acos, camp_strat
