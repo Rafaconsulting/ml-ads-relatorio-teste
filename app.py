@@ -129,7 +129,7 @@ for _c in _num_cols:
 
 st.dataframe(_matriz_df.style.format(_fmt_map), use_container_width=True)
 
-    st.divider()
+st.divider()
 
     st.subheader("Painel de Controle Geral (todas as campanhas)")
     st.dataframe(panel, use_container_width=True)
