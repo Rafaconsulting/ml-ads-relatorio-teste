@@ -54,6 +54,28 @@ def _is_money_col(col_name: str) -> bool:
     return any(k in c for k in money_keys)
 
 
+def _is_id_col(col_name: str) -> bool:
+    """
+    IDs sao identificadores, nao devem receber formatacao numerica.
+    Mantem como texto puro (ex: 6086561266).
+    """
+    c = str(col_name).strip().lower().replace("__", "_")
+    return (
+        c == "id"
+        or c == "id_anuncio"
+        or c == "id_anúncio"
+        or c == "id campanha"
+        or c == "id_campanha"
+        or c.endswith("_id")
+        or c.startswith("id_")
+        or "id anuncio" in c
+        or "id anúncio" in c
+        or "id do anuncio" in c
+        or "id do anúncio" in c
+        or "id campanha" in c
+    )
+
+
 # IMPORTANTE
 # Tiramos ACOS objetivo e ACOS_Objetivo_N daqui, porque agora viram ROAS (numero)
 _PERCENT_COLS = {
@@ -192,6 +214,7 @@ def format_table_br(df: pd.DataFrame) -> pd.DataFrame:
     """
     Regras:
     - preserva colunas de texto (Nome da campanha, Acao_recomendada, etc)
+    - IDs: texto puro (somente digitos)
     - dinheiro: R$ com separador BR
     - percentuais: % com separador BR (e escala corrigida se vier 0-1)
     - contagens: inteiros sem decimais (Impressoes, Cliques, Visitas, Qtd_Vendas)
@@ -204,6 +227,15 @@ def format_table_br(df: pd.DataFrame) -> pd.DataFrame:
 
     for col in df_fmt.columns:
         lc = str(col).strip().lower()
+
+        # IDs devem ser texto puro, sem formatacao numerica
+        if _is_id_col(col):
+            s = df_fmt[col].astype(str).replace({"nan": ""})
+            # remove .0, separadores e qualquer caractere nao numerico
+            s = s.str.replace(r"\.0$", "", regex=True)
+            s = s.str.replace(r"\D", "", regex=True)
+            df_fmt[col] = s
+            continue
 
         # preserva texto por nome (blindagem)
         if (
