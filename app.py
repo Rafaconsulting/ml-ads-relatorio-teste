@@ -12,22 +12,38 @@ import ml_report as ml
 def _is_money_col(col_name: str) -> bool:
     c = str(col_name).strip().lower()
     money_keys = [
-        "orcamento", "orçamento", "investimento", "receita", "vendas_brutas",
-        "potencial_receita", "potencial receita", "faturamento", "vendas (r$)",
+        "orcamento",
+        "orçamento",
+        "investimento",
+        "receita",
+        "vendas_brutas",
+        "potencial_receita",
+        "potencial receita",
+        "faturamento",
+        "vendas (r$)",
     ]
     return any(k in c for k in money_keys)
 
 
 _PERCENT_COLS = {
-    "acos real", "acos_real",
-    "acos objetivo n", "acos_objetivo_n",
-    "cpi_share", "cpi share",
-    "cpi_cum", "cpi cum",
-    "con_visitas_vendas", "con visitas vendas",
-    "conv_visitas_vendas", "conv visitas vendas",
-    "conv_visitas_compradores", "conv visitas compradores",
-    "perdidas_orc", "perdidas_class",
-    "cvr", "cvr\n(conversion rate)",
+    "acos real",
+    "acos_real",
+    "acos objetivo n",
+    "acos_objetivo_n",
+    "cpi_share",
+    "cpi share",
+    "cpi_cum",
+    "cpi cum",
+    "con_visitas_vendas",
+    "con visitas vendas",
+    "conv_visitas_vendas",
+    "conv visitas vendas",
+    "conv_visitas_compradores",
+    "conv visitas compradores",
+    "perdidas_orc",
+    "perdidas_class",
+    "cvr",
+    "cvr\n(conversion rate)",
 }
 
 
@@ -96,7 +112,7 @@ def show_df(df, **kwargs):
         except Exception:
             pass
 
-    # Fallback final, transforma so as colunas especiais em string
+    # Fallback final: transforma so as colunas especiais em string
     for c in money_cols:
         _df[c] = pd.to_numeric(_df[c], errors="coerce")
         _df[c] = _df[c].map(lambda x: "" if pd.isna(x) else f"R$ {x:,.2f}")
@@ -119,7 +135,7 @@ def main():
         st.divider()
 
         st.subheader("Arquivos")
-        organico_file = st.file_uploader("Relatorio Orgânico (Excel)", type=["xlsx"])
+        organico_file = st.file_uploader("Relatório de Desempanho de Vendas (Excel)", type=["xlsx"])
         patrocinados_file = st.file_uploader("Relatorio Anuncios Patrocinados (Excel)", type=["xlsx"])
         campanhas_file = st.file_uploader("Relatorio de Campanha (Excel)", type=["xlsx"])
 
@@ -130,9 +146,34 @@ def main():
         st.divider()
         st.subheader("Filtros de regra")
         enter_visitas_min = st.number_input("Entrar em Ads: visitas min", min_value=0, value=50, step=10)
-        enter_conv_min = st.number_input("Entrar em Ads: conversao min", min_value=0.0, value=0.05, step=0.01, format="%.2f")
-        pause_invest_min = st.number_input("Pausar: investimento min (R$)", min_value=0.0, value=100.0, step=50.0, format="%.2f")
-        pause_cvr_max = st.number_input("Pausar: CVR max", min_value=0.0, value=0.01, step=0.01, format="%.2f")
+
+        enter_conv_min_pct = st.number_input(
+            "Entrar em Ads: conversao min (%)",
+            min_value=0.0,
+            value=5.0,
+            step=0.5,
+            format="%.2f",
+        )
+
+        pause_invest_min = st.number_input(
+            "Pausar: investimento min (R$)",
+            min_value=0.0,
+            value=100.0,
+            step=50.0,
+            format="%.2f",
+        )
+
+        pause_cvr_max_pct = st.number_input(
+            "Pausar: CVR max (%)",
+            min_value=0.0,
+            value=1.0,
+            step=0.5,
+            format="%.2f",
+        )
+
+        # Converte para decimal para o motor do relatorio
+        enter_conv_min = float(enter_conv_min_pct) / 100.0
+        pause_cvr_max = float(pause_cvr_max_pct) / 100.0
 
         st.divider()
         executar = st.button("Gerar relatorio", use_container_width=True)
@@ -183,7 +224,11 @@ def main():
     cols[0].metric("Investimento Ads", f"R$ {float(kpis.get('Investimento Ads (R$)', 0)):,.2f}")
     cols[1].metric("Receita Ads", f"R$ {float(kpis.get('Receita Ads (R$)', 0)):,.2f}")
     cols[2].metric("ROAS", f"{float(kpis.get('ROAS', 0)):.2f}")
-    cols[3].metric("TACOS", f"{float(kpis.get('TACOS', 0)) * 100:.2f}%")
+
+    tacos_val = float(kpis.get("TACOS", 0))
+    # se vier 0.12, mostra 12%; se vier 12, mostra 12%
+    tacos_pct = tacos_val * 100 if tacos_val <= 2 else tacos_val
+    cols[3].metric("TACOS", f"{tacos_pct:.2f}%")
 
     with st.expander("Ver tabela de KPIs"):
         show_df(kpi_df)
