@@ -85,6 +85,10 @@ with tab1:
     e.metric("Campanhas unicas", kpis["Campanhas únicas"])
     f.metric("IDs patrocinados", kpis["IDs patrocinados únicos"])
 
+    # KPI extra sem alterar o layout principal (mantem as 6 colunas acima)
+    t1, t2, t3, t4, t5, t6 = st.columns(6)
+    t1.metric("TACOS", f"{kpis.get('TACOS', 0.0) * 100:.2f}%")
+
     st.divider()
 
     if modo_key == "diario":
@@ -108,39 +112,26 @@ with tab1:
     with cA:
         st.write("Locomotivas (CPI 80% + perda por classificacao)")
         _df_tmp = high["Locomotivas"].copy()
-_num_cols = _df_tmp.select_dtypes(include=["number"]).columns
-_df_tmp[_num_cols] = _df_tmp[_num_cols].round(2)
-st.dataframe(_df_tmp, use_container_width=True)
-with cB:
+        _num_cols = _df_tmp.select_dtypes(include=["number"]).columns
+        _df_tmp[_num_cols] = _df_tmp[_num_cols].round(2)
+        st.dataframe(_df_tmp, use_container_width=True)
+    with cB:
         st.write("Minas Limitadas (ROAS alto + perda por orcamento)")
         _df_tmp = high["Minas"].copy()
-_num_cols = _df_tmp.select_dtypes(include=["number"]).columns
-_df_tmp[_num_cols] = _df_tmp[_num_cols].round(2)
-st.dataframe(_df_tmp, use_container_width=True)
-
+        _num_cols = _df_tmp.select_dtypes(include=["number"]).columns
+        _df_tmp[_num_cols] = _df_tmp[_num_cols].round(2)
+        st.dataframe(_df_tmp, use_container_width=True)
     st.divider()
 
     st.subheader("Plano de Acao - 7 dias")
-    # Formata apenas a exibicao da Matriz de Oportunidade para limitar em 2 casas decimais.
-_matriz_df = plan7.copy()
-_num_cols = _matriz_df.select_dtypes(include=["number"]).columns
+    st.dataframe(plan7, use_container_width=True)
 
-_fmt_map = {}
-for _c in _num_cols:
-    _lc = str(_c).lower()
-    if "ctr" in _lc or "tacos" in _lc:
-        _fmt_map[_c] = "{:.2%}"
-    else:
-        _fmt_map[_c] = "{:,.2f}"
-
-st.dataframe(_matriz_df.style.format(_fmt_map), use_container_width=True)
-
-st.divider()
+    st.divider()
 
     st.subheader("Painel de Controle Geral (todas as campanhas)")
     st.dataframe(panel, use_container_width=True)
 
-st.divider()
+    st.divider()
 
     cC, cD = st.columns(2)
     with cC:
