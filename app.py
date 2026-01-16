@@ -28,10 +28,12 @@ def _is_money_col(col_name: str) -> bool:
     return False
 
 def show_df(df, **kwargs):
-    _st_dataframe = st.dataframe
     """Mostra dataframe no Streamlit com colunas monetarias formatadas com R$.
-    Nao altera o df original e nao mexe em percentuais.
+    Formata apenas na exibicao, sem alterar os dados.
+    Implementacao segura: evita pandas Styler em tabelas grandes (pode travar o app).
     """
+    _st_dataframe = st.dataframe
+
     # Se ja for um Styler, nao mexe
     try:
         from pandas.io.formats.style import Styler
@@ -50,15 +52,30 @@ def show_df(df, **kwargs):
         return _st_dataframe(df, **kwargs)
 
     _df = df.copy()
-    fmt = {}
-    for c in _df.columns:
-        if _is_money_col(c):
-            fmt[c] = "R$ {:,.2f}"
 
-    if fmt:
-        return _st_dataframe(_df.style.format(fmt), **kwargs)
+    money_cols = [c for c in _df.columns if _is_money_col(c)]
 
-    return _st_dataframe(_df, **kwargs)
+    # Se nao tem colunas de dinheiro, segue normal
+    if not money_cols:
+        return _st_dataframe(_df, **kwargs)
+
+    # Preferencia: usar column_config (mais leve que Styler)
+    try:
+        col_config = {}
+        for c in money_cols:
+            col_config[c] = st.column_config.NumberColumn(format="R$ %.2f")
+        return _st_dataframe(_df, column_config=col_config, **kwargs)
+    except Exception:
+        # Fallback: Styler so para tabelas pequenas
+        if _df.shape[0] <= 1500 and _df.shape[1] <= 40:
+            fmt = {c: "R$ {:,.2f}" for c in money_cols}
+            return _st_dataframe(_df.style.format(fmt), **kwargs)
+
+        # Fallback final: converte so as colunas de dinheiro para string (leve)
+        for c in money_cols:
+            _df[c] = pd.to_numeric(_df[c], errors="coerce")
+            _df[c] = _df[c].map(lambda x: "" if pd.isna(x) else f"R$ {x:,.2f}")
+        return _st_dataframe(_df, **kwargs)
 
 st.set_page_config(page_title="ML Ads - Dashboard & Relatorio", layout="wide")
 st.title("Mercado Livre Ads - Dashboard e Relatorio Automatico (Estrategico)")
