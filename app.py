@@ -98,7 +98,7 @@ def replace_acos_obj_with_roas_obj(df: pd.DataFrame) -> pd.DataFrame:
     df2 = df.copy()
 
     for col in df2.columns:
-        lc = str(col).lower()
+        lc = str(col).strip().lower()
         if "acos" in lc and "objetivo" in lc:
             ser = pd.to_numeric(df2[col], errors="coerce")
             df2[col] = ser.map(_acos_value_to_roas)
@@ -109,27 +109,57 @@ def replace_acos_obj_with_roas_obj(df: pd.DataFrame) -> pd.DataFrame:
 
 
 # -------------------------
-# Painel geral formatado
+# Formatacao (Painel Geral e Matriz CPI)
 # -------------------------
-def format_panel_geral_br(df: pd.DataFrame) -> pd.DataFrame:
+def format_table_br(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Regras:
+    - preserva colunas de texto (Nome da campanha, Acao_recomendada, etc)
+    - dinheiro: R$ com separador BR
+    - percentuais: % com separador BR (e escala corrigida se vier 0-1)
+    - numeros gerais: 2 casas e separador BR
+    """
+    if df is None or not isinstance(df, pd.DataFrame) or df.empty:
+        return df
+
     df_fmt = df.copy()
 
     for col in df_fmt.columns:
+        lc = str(col).strip().lower()
+
+        # preserva texto por nome (mais seguro que heuristica)
+        if (
+            "nome" in lc
+            or "campanha" in lc
+            or "acao" in lc
+            or "ação" in lc
+            or "recomend" in lc
+            or "estrateg" in lc
+            or "estratég" in lc
+        ):
+            df_fmt[col] = df_fmt[col].astype(str).replace({"nan": ""})
+            continue
+
+        # tenta converter para numero
         serie_num = pd.to_numeric(df_fmt[col], errors="coerce")
         non_null = df_fmt[col].notna().sum()
         num_ok = serie_num.notna().sum()
 
-        if non_null > 0 and (num_ok / non_null) < 0.60:
+        # se nao for numerica de verdade, preserva como texto
+        if non_null == 0 or (num_ok / max(non_null, 1)) < 0.60:
             df_fmt[col] = df_fmt[col].astype(str).replace({"nan": ""})
             continue
 
+        # numerica
         if _is_money_col(col):
             df_fmt[col] = serie_num.map(fmt_money_br)
+
         elif _is_percent_col(col):
             vmax = serie_num.max(skipna=True)
             if pd.notna(vmax) and vmax <= 2:
                 serie_num = serie_num * 100
             df_fmt[col] = serie_num.map(fmt_percent_br)
+
         else:
             df_fmt[col] = serie_num.map(lambda x: fmt_number_br(x, 2))
 
@@ -137,7 +167,7 @@ def format_panel_geral_br(df: pd.DataFrame) -> pd.DataFrame:
 
 
 # -------------------------
-# Exibição padrão
+# Exibição padrão (tabelas auxiliares)
 # -------------------------
 def show_df(df, **kwargs):
     if df is None or not isinstance(df, pd.DataFrame) or df.empty:
@@ -146,6 +176,7 @@ def show_df(df, **kwargs):
 
     _df = df.copy()
 
+    # corrige escala de percentuais quando vier 0-1
     for col in _df.columns:
         if _is_percent_col(col):
             ser = pd.to_numeric(_df[col], errors="coerce")
@@ -168,22 +199,14 @@ def main():
         st.divider()
 
         st.subheader("Arquivos")
-        organico_file = st.file_uploader(
-            "Relatório de Desempenho de Vendas (Excel)", type=["xlsx"]
-        )
-        patrocinados_file = st.file_uploader(
-            "Relatório Anúncios Patrocinados (Excel)", type=["xlsx"]
-        )
-        campanhas_file = st.file_uploader(
-            "Relatório de Campanha (Excel)", type=["xlsx"]
-        )
+        organico_file = st.file_uploader("Relatório de Desempenho de Vendas (Excel)", type=["xlsx"])
+        patrocinados_file = st.file_uploader("Relatório Anúncios Patrocinados (Excel)", type=["xlsx"])
+        campanhas_file = st.file_uploader("Relatório de Campanha (Excel)", type=["xlsx"])
 
         st.divider()
         st.subheader("Filtros de regra")
 
-        enter_visitas_min = st.number_input(
-            "Entrar em Ads: visitas mín", min_value=0, value=50, step=10
-        )
+        enter_visitas_min = st.number_input("Entrar em Ads: visitas mín", min_value=0, value=50, step=10)
 
         enter_conv_min_pct = st.number_input(
             "Entrar em Ads: conversão mín (%)",
@@ -227,7 +250,7 @@ def main():
         org = ml.load_organico(organico_file)
         pat = ml.load_patrocinados(patrocinados_file)
 
-        # MODO ÚNICO: CONSOLIDADO
+        # Modo unico: consolidado
         camp_raw = ml.load_campanhas_consolidado(campanhas_file)
         camp_agg = ml.build_campaign_agg(camp_raw, modo="consolidado")
 
@@ -254,12 +277,8 @@ def main():
     st.subheader("KPIs")
     cols = st.columns(4)
 
-    cols[0].metric(
-        "Investimento Ads", fmt_money_br(float(kpis.get("Investimento Ads (R$)", 0)))
-    )
-    cols[1].metric(
-        "Receita Ads", fmt_money_br(float(kpis.get("Receita Ads (R$)", 0)))
-    )
+    cols[0].metric("Investimento Ads", fmt_money_br(float(kpis.get("Investimento Ads (R$)", 0))))
+    cols[1].metric("Receita Ads", fmt_money_br(float(kpis.get("Receita Ads (R$)", 0))))
     cols[2].metric("ROAS", fmt_number_br(float(kpis.get("ROAS", 0)), 2))
 
     tacos_val = float(kpis.get("TACOS", 0))
@@ -270,26 +289,36 @@ def main():
 
     # -------------------------
     # Painel geral
+    # Importante: ml_report espera "ACOS Objetivo" dentro do camp_strat
     # -------------------------
     st.subheader("Painel geral")
     panel_raw = ml.build_control_panel(camp_strat)
     panel_raw = replace_acos_obj_with_roas_obj(panel_raw)
-    panel_fmt = format_panel_geral_br(panel_raw)
+    panel_fmt = format_table_br(panel_raw)
     st.dataframe(panel_fmt, use_container_width=True)
 
     st.divider()
 
     # -------------------------
-    # Views com ROAS objetivo
+    # Matriz CPI com os mesmos ajustes do Painel Geral
     # -------------------------
-    camp_strat_view = replace_acos_obj_with_roas_obj(camp_strat)
+    st.subheader("Matriz CPI")
+
+    cpi_raw = replace_acos_obj_with_roas_obj(camp_strat)
+    cpi_fmt = format_table_br(cpi_raw)
+
+    st.dataframe(cpi_fmt, use_container_width=True)
+
+    st.divider()
+
+    # -------------------------
+    # Outras tabelas (mantem estilo atual, mas com ROAS objetivo)
+    # Se quiser, podemos aplicar format_table_br nelas tambem
+    # -------------------------
     pause_view = replace_acos_obj_with_roas_obj(pause)
     enter_view = replace_acos_obj_with_roas_obj(enter)
     scale_view = replace_acos_obj_with_roas_obj(scale)
     acos_view = replace_acos_obj_with_roas_obj(acos)
-
-    st.subheader("Matriz CPI")
-    show_df(camp_strat_view, use_container_width=True)
 
     c1, c2 = st.columns(2)
     with c1:
