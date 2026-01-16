@@ -96,11 +96,8 @@ def _acos_value_to_roas(ac):
 
 def _roas_col_name_from_acos_col(col_name: str) -> str:
     lc = str(col_name).strip().lower().replace("__", "_")
-
-    # identifica variacoes "N"
     if lc.endswith("_n") or "objetivo_n" in lc or "objetivo n" in lc:
         return "ROAS objetivo N"
-
     return "ROAS objetivo"
 
 
@@ -131,7 +128,7 @@ def replace_acos_obj_with_roas_obj(df: pd.DataFrame) -> pd.DataFrame:
 
 
 # -------------------------
-# Formatacao (Painel Geral e Matriz CPI)
+# Formatacao (Painel Geral, Matriz CPI e demais tabelas)
 # -------------------------
 def format_table_br(df: pd.DataFrame) -> pd.DataFrame:
     """
@@ -189,24 +186,10 @@ def format_table_br(df: pd.DataFrame) -> pd.DataFrame:
 
 
 # -------------------------
-# Exibição padrão (tabelas auxiliares)
+# Exibição padrão (mantida para utilidade)
 # -------------------------
 def show_df(df, **kwargs):
-    if df is None or not isinstance(df, pd.DataFrame) or df.empty:
-        st.dataframe(df, **kwargs)
-        return
-
-    _df = df.copy()
-
-    # corrige escala de percentuais quando vier 0-1
-    for col in _df.columns:
-        if _is_percent_col(col):
-            ser = pd.to_numeric(_df[col], errors="coerce")
-            vmax = ser.max(skipna=True)
-            if pd.notna(vmax) and vmax <= 2:
-                _df[col] = ser * 100
-
-    st.dataframe(_df, **kwargs)
+    st.dataframe(df, **kwargs)
 
 
 # -------------------------
@@ -320,17 +303,14 @@ def main():
     # -------------------------
     st.subheader("Painel geral")
     panel_raw = ml.build_control_panel(camp_strat)
-
-    # converte ACOS objetivo e ACOS_Objetivo_N para ROAS objetivo e ROAS objetivo N
     panel_raw = replace_acos_obj_with_roas_obj(panel_raw)
-
     panel_fmt = format_table_br(panel_raw)
     st.dataframe(panel_fmt, use_container_width=True)
 
     st.divider()
 
     # -------------------------
-    # Matriz CPI com as mesmas regras do Painel Geral
+    # Matriz CPI com os mesmos ajustes do Painel Geral
     # -------------------------
     st.subheader("Matriz CPI")
     cpi_raw = replace_acos_obj_with_roas_obj(camp_strat)
@@ -340,28 +320,28 @@ def main():
     st.divider()
 
     # -------------------------
-    # Outras tabelas (mantem estilo atual, mas com ROAS objetivo)
+    # Replicar ajustes no restante do dashboard
     # -------------------------
-    pause_view = replace_acos_obj_with_roas_obj(pause)
-    enter_view = replace_acos_obj_with_roas_obj(enter)
-    scale_view = replace_acos_obj_with_roas_obj(scale)
-    acos_view = replace_acos_obj_with_roas_obj(acos)
+    pause_fmt = format_table_br(replace_acos_obj_with_roas_obj(pause))
+    enter_fmt = format_table_br(replace_acos_obj_with_roas_obj(enter))
+    scale_fmt = format_table_br(replace_acos_obj_with_roas_obj(scale))
+    acos_fmt = format_table_br(replace_acos_obj_with_roas_obj(acos))
 
     c1, c2 = st.columns(2)
     with c1:
         st.subheader("Pausar ou revisar")
-        show_df(pause_view, use_container_width=True)
+        st.dataframe(pause_fmt, use_container_width=True)
     with c2:
         st.subheader("Entrar em Ads")
-        show_df(enter_view, use_container_width=True)
+        st.dataframe(enter_fmt, use_container_width=True)
 
     c3, c4 = st.columns(2)
     with c3:
         st.subheader("Escalar orçamento")
-        show_df(scale_view, use_container_width=True)
+        st.dataframe(scale_fmt, use_container_width=True)
     with c4:
         st.subheader("Subir ROAS objetivo")
-        show_df(acos_view, use_container_width=True)
+        st.dataframe(acos_fmt, use_container_width=True)
 
     # -------------------------
     # Download Excel
