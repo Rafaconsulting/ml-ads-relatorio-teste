@@ -277,6 +277,13 @@ def build_opportunity_highlights(camp_agg_strat: pd.DataFrame) -> dict:
         return receita * factor
 
     minas["Potencial_Receita"] = minas.apply(proj, axis=1)
+    # Projecoes de receita para Minas Limitadas com cenarios de aumento de orcamento.
+# Premissa: mantendo ROAS constante, a receita escala linearmente com o investimento/orcamento.
+if "Receita" in minas.columns:
+    minas["Receita"] = pd.to_numeric(minas["Receita"], errors="coerce").fillna(0.0)
+    minas["Receita proj (+30% orcamento)"] = minas["Receita"] * 1.30
+    minas["Receita proj (+60% orcamento)"] = minas["Receita"] * 1.60
+
     return {"Locomotivas": locomotivas, "Minas": minas}
 
 
