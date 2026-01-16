@@ -416,7 +416,7 @@ def main():
         st.subheader("Escalar orçamento")
         st.dataframe(scale_fmt, use_container_width=True)
     with c4:
-        st.subheader("Subir ROAS objetivo")
+        st.subheader("Baixar ROAS objetivo")
         st.dataframe(acos_fmt, use_container_width=True)
 
     # -------------------------
