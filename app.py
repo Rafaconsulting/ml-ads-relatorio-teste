@@ -30,7 +30,7 @@ def fmt_number_br(x, decimals=2):
 # -------------------------
 # Exibicao padronizada
 # -------------------------
-def -is_money_col(col_name: str) -> bool:
+def _is_money_col(col_name: str) -> bool:
     c = str(col_name).strip().lower()
     money_keys = [
         "orcamento",
