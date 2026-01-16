@@ -46,11 +46,11 @@ def _is_money_col(col_name: str) -> bool:
     return any(k in c for k in money_keys)
 
 
+# IMPORTANTE:
+# Removi ACOS objetivo daqui, porque ele vai virar ROAS objetivo (numero, nao percentual)
 _PERCENT_COLS = {
     "acos real",
     "acos_real",
-    "acos objetivo n",
-    "acos_objetivo_n",
     "cpi_share",
     "cpi share",
     "cpi_cum",
@@ -82,25 +82,101 @@ def _dataframe_accepts_column_config() -> bool:
 
 
 # -------------------------
+# Conversao ACOS objetivo -> ROAS objetivo
+# -------------------------
+def _acos_value_to_roas(ac):
+    """
+    Converte um ACOS objetivo para ROAS objetivo.
+    Aceita ACOS como:
+      - fracao (0.25)
+      - percentual (25)
+    Retorna ROAS como numero (ex: 4.0).
+    """
+    if pd.isna(ac):
+        return pd.NA
+
+    try:
+        v = float(ac)
+    except Exception:
+        return pd.NA
+
+    if v == 0:
+        return pd.NA
+
+    # se vier como percentual (25, 30, 50...), converte para fracao
+    acos_frac = v / 100.0 if v > 2 else v
+
+    if acos_frac <= 0:
+        return pd.NA
+
+    return 1.0 / acos_frac
+
+
+def replace_acos_obj_with_roas_obj(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Procura colunas de ACOS objetivo e:
+      - substitui os valores por ROAS objetivo
+      - renomeia a coluna para "ROAS objetivo"
+    """
+    if df is None or not isinstance(df, pd.DataFrame) or df.empty:
+        return df
+
+    df2 = df.copy()
+
+    # candidatos mais comuns, mantendo compatibilidade com o que aparece no seu app
+    candidates = [
+        "ACOS Objetivo",
+        "ACOS objetivo",
+        "ACOS_Objetivo",
+        "ACOS_Objetivo_N",
+        "acos_objetivo_n",
+        "acos objetivo n",
+        "ACOS Objetivo N",
+    ]
+
+    found_col = None
+    for c in df2.columns:
+        if c in candidates:
+            found_col = c
+            break
+
+    # fallback: busca por texto parecido
+    if found_col is None:
+        for c in df2.columns:
+            lc = str(c).strip().lower()
+            if "acos" in lc and "objetivo" in lc:
+                found_col = c
+                break
+
+    if found_col is None:
+        return df2
+
+    ser = pd.to_numeric(df2[found_col], errors="coerce")
+    df2[found_col] = ser.map(_acos_value_to_roas)
+
+    # renomeia
+    df2 = df2.rename(columns={found_col: "ROAS objetivo"})
+
+    return df2
+
+
+# -------------------------
 # Formatacao exclusiva do Painel Geral
 # -------------------------
 def format_panel_geral_br(df: pd.DataFrame) -> pd.DataFrame:
     df_fmt = df.copy()
 
     for col in df_fmt.columns:
-        # tenta converter para numero
+        # preserva texto (ex: Nome da campanha, Acao_recomendada)
         serie_num = pd.to_numeric(df_fmt[col], errors="coerce")
-
-        # se a coluna for majoritariamente texto, preserva original
         non_null = df_fmt[col].notna().sum()
         num_ok = serie_num.notna().sum()
 
-        # regra: se menos de 60% das celulas nao-nulas virarem numero, trata como texto
         if non_null > 0 and (num_ok / non_null) < 0.60:
             df_fmt[col] = df_fmt[col].astype(str).replace({"nan": ""})
             continue
 
-        # aqui, tratamos como numerica
+        # numerica
         if _is_money_col(col):
             df_fmt[col] = serie_num.map(fmt_money_br)
 
@@ -114,7 +190,6 @@ def format_panel_geral_br(df: pd.DataFrame) -> pd.DataFrame:
             df_fmt[col] = serie_num.map(lambda x: fmt_number_br(x, 2))
 
     return df_fmt
-
 
 
 # -------------------------
@@ -252,6 +327,13 @@ def main():
             pause_cvr_max=float(pause_cvr_max),
         )
 
+        # Converte ACOS objetivo -> ROAS objetivo nos dataframes que costumam ter a coluna
+        camp_strat = replace_acos_obj_with_roas_obj(camp_strat)
+        scale = replace_acos_obj_with_roas_obj(scale)
+        acos = replace_acos_obj_with_roas_obj(acos)  # pode existir aqui dependendo do seu ml_report
+        pause = replace_acos_obj_with_roas_obj(pause)
+        enter = replace_acos_obj_with_roas_obj(enter)
+
         st.success("Relatório gerado com sucesso.")
 
     except Exception as e:
@@ -282,6 +364,7 @@ def main():
 
     st.subheader("Painel geral")
     panel_raw = ml.build_control_panel(camp_strat)
+    panel_raw = replace_acos_obj_with_roas_obj(panel_raw)
     panel_fmt = format_panel_geral_br(panel_raw)
     st.dataframe(panel_fmt, use_container_width=True)
 
@@ -303,7 +386,7 @@ def main():
         st.subheader("Escalar orçamento")
         show_df(scale, use_container_width=True)
     with c4:
-        st.subheader("Subir ACOS objetivo")
+        st.subheader("Subir ROAS objetivo")
         show_df(acos, use_container_width=True)
 
     st.subheader("Download Excel")
