@@ -28,6 +28,7 @@ def _is_money_col(col_name: str) -> bool:
     return False
 
 def show_df(df, **kwargs):
+    _st_dataframe = st.dataframe
     """Mostra dataframe no Streamlit com colunas monetarias formatadas com R$.
     Nao altera o df original e nao mexe em percentuais.
     """
@@ -35,7 +36,7 @@ def show_df(df, **kwargs):
     try:
         from pandas.io.formats.style import Styler
         if isinstance(df, Styler):
-            return show_df(df, **kwargs)
+            return _st_dataframe(df, **kwargs)
     except Exception:
         pass
 
@@ -43,10 +44,10 @@ def show_df(df, **kwargs):
         return st.info("Sem dados para exibir.")
 
     if not isinstance(df, pd.DataFrame):
-        return show_df(df, **kwargs)
+        return _st_dataframe(df, **kwargs)
 
     if df.empty:
-        return show_df(df, **kwargs)
+        return _st_dataframe(df, **kwargs)
 
     _df = df.copy()
     fmt = {}
@@ -55,9 +56,9 @@ def show_df(df, **kwargs):
             fmt[c] = "R$ {:,.2f}"
 
     if fmt:
-        return show_df(_df.style.format(fmt), **kwargs)
+        return _st_dataframe(_df.style.format(fmt), **kwargs)
 
-    return show_df(_df, **kwargs)
+    return _st_dataframe(_df, **kwargs)
 
 st.set_page_config(page_title="ML Ads - Dashboard & Relatorio", layout="wide")
 st.title("Mercado Livre Ads - Dashboard e Relatorio Automatico (Estrategico)")
