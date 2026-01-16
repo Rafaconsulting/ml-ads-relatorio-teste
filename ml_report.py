@@ -289,7 +289,7 @@ def build_7_day_plan(camp_agg_strat: pd.DataFrame) -> pd.DataFrame:
 
     d2 = df[df["Quadrante"] == "COMPETITIVIDADE"][["Nome","ACOS Objetivo","Perdidas_Class","Receita","Acao_Recomendada"]].copy()
     d2["Dia"] = "Dia 2"
-    d2["Tarefa"] = "Subir ACOS objetivo (abrir funil) e destravar rank"
+    d2["Tarefa"] = "Baixar ROAS objetivo (abrir funil) e destravar rank"
 
     d5 = df[df["Quadrante"].isin(["ESCALA_ORCAMENTO","COMPETITIVIDADE","HEMORRAGIA"])][["Nome","Investimento","Receita","ROAS_Real","Acao_Recomendada"]].copy()
     d5["Dia"] = "Dia 5"
@@ -345,7 +345,7 @@ def build_tables(
         scale = scale.sort_values("Perdidas_Orc", ascending=False)
 
     acos = camp_strat[camp_strat["Quadrante"] == "COMPETITIVIDADE"].copy()
-    acos["Ação"] = "SUBIR ACOS OBJETIVO"
+    acos["Ação"] = "BAIXAR ROAS OBJETIVO"
     if "Perdidas_Class" in acos.columns:
         acos = acos.sort_values("Perdidas_Class", ascending=False)
 
@@ -404,7 +404,7 @@ def gerar_excel(kpis, camp_agg, pause, enter, scale, acos, camp_strat, daily=Non
         pause.to_excel(writer, index=False, sheet_name="PAUSAR_CAMPANHAS")
         enter.to_excel(writer, index=False, sheet_name="ENTRAR_EM_ADS")
         scale.to_excel(writer, index=False, sheet_name="ESCALAR_ORCAMENTO")
-        acos.to_excel(writer, index=False, sheet_name="SUBIR_ACOS")
+        acos.to_excel(writer, index=False, sheet_name="BAIXAR_ROAS")
         camp_agg.to_excel(writer, index=False, sheet_name="BASE_CAMPANHAS_AGG")
         if daily is not None:
             daily.to_excel(writer, index=False, sheet_name="SERIE_DIARIA")
