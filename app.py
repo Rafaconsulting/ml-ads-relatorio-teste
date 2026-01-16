@@ -48,6 +48,8 @@ def _is_money_col(col_name: str) -> bool:
         "vendas_brutas",
         "potencial_receita",
         "potencial receita",
+        "impacto_estimado",
+        "impacto estimado",
         "faturamento",
         "vendas (r$)",
     ]
