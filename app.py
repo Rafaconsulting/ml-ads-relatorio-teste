@@ -2,6 +2,20 @@ import streamlit as st
 from datetime import datetime
 import ml_report as ml
 
+
+# Formata apenas a exibicao das tabelas (nao altera dados nem o Excel)
+def _fmt_2dec_display(df):
+    df2 = df.copy()
+    num_cols = df2.select_dtypes(include=['number']).columns
+    fmt = {}
+    for c in num_cols:
+        lc = str(c).lower()
+        if any(k in lc for k in ['ctr','cvr','acos','tacos','%']):
+            fmt[c] = '{:.2%}'
+        else:
+            fmt[c] = '{:,.2f}'
+    return df2.style.format(fmt)
+
 st.set_page_config(page_title="ML Ads - Dashboard & Relatorio", layout="wide")
 st.title("Mercado Livre Ads - Dashboard e Relatorio Automatico (Estrategico)")
 
@@ -107,42 +121,30 @@ with tab1:
     cA, cB = st.columns(2)
     with cA:
         st.write("Locomotivas (CPI 80% + perda por classificacao)")
-        st.dataframe(high["Locomotivas"], use_container_width=True)
+        st.dataframe(_fmt_2dec_display(high["Locomotivas"]), use_container_width=True)
     with cB:
         st.write("Minas Limitadas (ROAS alto + perda por orcamento)")
-        st.dataframe(high["Minas"], use_container_width=True)
+        st.dataframe(_fmt_2dec_display(high["Minas"]), use_container_width=True)
 
     st.divider()
 
     st.subheader("Plano de Acao - 7 dias")
-    # Formata apenas a exibicao da Matriz de Oportunidade para limitar em 2 casas decimais.
-_matriz_df = plan7.copy()
-_num_cols = _matriz_df.select_dtypes(include=["number"]).columns
+    st.dataframe(_fmt_2dec_display(plan7), use_container_width=True)
 
-_fmt_map = {}
-for _c in _num_cols:
-    _lc = str(_c).lower()
-    if "ctr" in _lc or "tacos" in _lc:
-        _fmt_map[_c] = "{:.2%}"
-    else:
-        _fmt_map[_c] = "{:,.2f}"
-
-st.dataframe(_matriz_df.style.format(_fmt_map), use_container_width=True)
-
-st.divider()
+    st.divider()
 
     st.subheader("Painel de Controle Geral (todas as campanhas)")
     st.dataframe(panel, use_container_width=True)
 
-st.divider()
+    st.divider()
 
     cC, cD = st.columns(2)
     with cC:
         st.subheader("Campanhas para PAUSAR/REVISAR")
-        st.dataframe(pause, use_container_width=True)
+        st.dataframe(_fmt_2dec_display(pause), use_container_width=True)
     with cD:
         st.subheader("Anuncios para ENTRAR em Ads (organico forte)")
-        st.dataframe(enter, use_container_width=True)
+        st.dataframe(_fmt_2dec_display(enter), use_container_width=True)
 
 with tab2:
     st.subheader("Gerar relatorio final (Excel)")
