@@ -6,6 +6,46 @@ EMOJI_YELLOW = "\U0001F7E1"  # yellow circle
 EMOJI_BLUE = "\U0001F535"    # blue circle
 EMOJI_RED = "\U0001F534"     # red circle
 
+def _reorder_action_before_motivo(df: pd.DataFrame) -> pd.DataFrame:
+    """Move Acao_Recomendada para ficar antes de Confianca_Dado e Motivo (se existirem).
+
+    Regra: Acao_Recomendada sempre antes de Motivo, mantendo o resto na ordem original.
+    """
+    if df is None or not isinstance(df, pd.DataFrame) or df.empty:
+        return df
+    cols = list(df.columns)
+    if 'Acao_Recomendada' not in cols:
+        return df
+
+    def _pop(col):
+        if col in cols:
+            cols.remove(col)
+            return col
+        return None
+
+    acao = _pop('Acao_Recomendada')
+    conf = _pop('Confianca_Dado')
+    motivo = _pop('Motivo')
+
+    # tenta inserir apos Perdidas_Class, se existir; senao, apos ROAS_Real; senao, no inicio
+    anchor = None
+    for cand in ['Perdidas_Class', 'Perdidas_Orc', 'ROAS_Real', 'ROAS', 'Receita']:
+        if cand in cols:
+            anchor = cand
+            break
+
+    insert_at = 0
+    if anchor is not None:
+        insert_at = cols.index(anchor) + 1
+
+    # insere na ordem desejada
+    for col in [acao, conf, motivo]:
+        if col is not None:
+            cols.insert(insert_at, col)
+            insert_at += 1
+
+    return df[cols].copy()
+
 
 def load_organico(organico_file) -> pd.DataFrame:
     org = pd.read_excel(organico_file, header=4)
@@ -272,6 +312,9 @@ def add_strategy_fields(
     # Se confianca baixa, registra motivo claro
     df.loc[df["Confianca_Dado"] == "BAIXA", "Motivo"] = "Baixo volume, manter coletando dado"
 
+    # Ordem de leitura nas tabelas: acao antes de confianca e motivo
+    df = _reorder_action_before_motivo(df)
+
     return df
 
 
@@ -370,17 +413,17 @@ def build_opportunity_highlights(camp_agg_strat: pd.DataFrame) -> dict:
 def build_7_day_plan(camp_agg_strat: pd.DataFrame) -> pd.DataFrame:
     df = camp_agg_strat.copy()
 
-    cols_d1 = [c for c in ["Nome","Orçamento","Perdidas_Orc","ROAS_Real","Impacto_Estimado_R$","Confianca_Dado","Motivo","Acao_Recomendada"] if c in df.columns]
+    cols_d1 = [c for c in ["Nome","Orçamento","Perdidas_Orc","ROAS_Real","Impacto_Estimado_R$","Acao_Recomendada","Confianca_Dado","Motivo"] if c in df.columns]
     d1 = df[df["Quadrante"] == "ESCALA_ORCAMENTO"][cols_d1].copy()
     d1["Dia"] = "Dia 1"
     d1["Tarefa"] = "Aumentar orcamento com controle (+20% a +40%)"
 
-    cols_d2 = [c for c in ["Nome","ROAS_Objetivo","Perdidas_Class","Receita","Confianca_Dado","Motivo","Acao_Recomendada"] if c in df.columns]
+    cols_d2 = [c for c in ["Nome","ROAS_Objetivo","Perdidas_Class","Receita","Acao_Recomendada","Confianca_Dado","Motivo"] if c in df.columns]
     d2 = df[df["Quadrante"] == "COMPETITIVIDADE"][cols_d2].copy()
     d2["Dia"] = "Dia 2"
     d2["Tarefa"] = "Baixar ROAS objetivo (abrir funil) apenas se houver elasticidade"
 
-    cols_d5 = [c for c in ["Nome","Investimento","Receita","ROAS_Real","Perdidas_Orc","Perdidas_Class","Confianca_Dado","Acao_Recomendada"] if c in df.columns]
+    cols_d5 = [c for c in ["Nome","Investimento","Receita","ROAS_Real","Perdidas_Orc","Perdidas_Class","Acao_Recomendada","Confianca_Dado"] if c in df.columns]
     d5 = df[df["Quadrante"].isin(["ESCALA_ORCAMENTO","COMPETITIVIDADE","HEMORRAGIA"])][cols_d5].copy()
     d5["Dia"] = "Dia 5"
     d5["Tarefa"] = "Monitorar investimento, ROAS e perdas"
@@ -424,6 +467,7 @@ def build_tables(
     ].copy()
     pause["Ação"] = "PAUSAR/REVISAR"
     pause = pause.sort_values("Investimento", ascending=False)
+    pause = _reorder_action_before_motivo(pause)
 
     ads_ids = set(pat["ID"].dropna().astype(str).unique())
     enter = org[
@@ -443,10 +487,14 @@ def build_tables(
     elif "Perdidas_Orc" in scale.columns:
         scale = scale.sort_values("Perdidas_Orc", ascending=False)
 
+    scale = _reorder_action_before_motivo(scale)
+
     acos = camp_strat[camp_strat["Quadrante"] == "COMPETITIVIDADE"].copy()
     acos["Ação"] = "BAIXAR ROAS OBJETIVO"
     if "Perdidas_Class" in acos.columns:
         acos = acos.sort_values(["Perdidas_Class","Receita"], ascending=[False, False])
+
+    acos = _reorder_action_before_motivo(acos)
 
     invest_total = float(pd.to_numeric(camp_agg["Investimento"], errors="coerce").fillna(0).sum())
     receita_total = float(pd.to_numeric(camp_agg["Receita"], errors="coerce").fillna(0).sum())
@@ -469,6 +517,7 @@ def build_tables(
         "Faturamento total (R$)": faturamento_total,
     }
 
+    camp_strat = _reorder_action_before_motivo(camp_strat)
     return kpis, pause, enter, scale, acos, camp_strat
 
 
