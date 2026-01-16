@@ -7,9 +7,30 @@ import ml_report as ml
 
 
 # -------------------------
+# Formatadores BR
+# -------------------------
+def fmt_money_br(x):
+    if pd.isna(x):
+        return ""
+    return f"R$ {x:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
+
+def fmt_percent_br(x):
+    if pd.isna(x):
+        return ""
+    return f"{x:.2f}%".replace(".", ",")
+
+
+def fmt_number_br(x, decimals=2):
+    if pd.isna(x):
+        return ""
+    return f"{x:,.{decimals}f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
+
+# -------------------------
 # Exibicao padronizada
 # -------------------------
-def _is_money_col(col_name: str) -> bool:
+def -is_money_col(col_name: str) -> bool:
     c = str(col_name).strip().lower()
     money_keys = [
         "orcamento",
@@ -76,49 +97,36 @@ def show_df(df, **kwargs):
     money_cols = [c for c in _df.columns if _is_money_col(c)]
     percent_cols = [c for c in _df.columns if _is_percent_col(c)]
 
-    # Percentuais: se vierem como fracao (0 a 1.x), multiplica por 100 so para exibicao
+    # percentuais: garante escala correta
     for c in percent_cols:
         ser = pd.to_numeric(_df[c], errors="coerce")
-        try:
-            vmax = ser.max(skipna=True)
-            if pd.notna(vmax) and vmax <= 2:
-                _df[c] = ser * 100
-            else:
-                _df[c] = ser
-        except Exception:
+        vmax = ser.max(skipna=True)
+        if pd.notna(vmax) and vmax <= 2:
+            _df[c] = ser * 100
+        else:
             _df[c] = ser
 
     n_rows, n_cols = _df.shape
-    n_special = len(money_cols) + len(percent_cols)
 
-    if _dataframe_accepts_column_config() and n_rows <= 5000 and n_cols <= 70 and n_special <= 40:
-        try:
-            col_config = {}
-            for c in money_cols:
-                col_config[c] = st.column_config.NumberColumn(format="R$ %.2f")
-            for c in percent_cols:
-                col_config[c] = st.column_config.NumberColumn(format="%.2f%%")
-            st.dataframe(_df, column_config=col_config, **kwargs)
-            return
-        except Exception:
-            pass
-
+    # Styler BR para tabelas menores
     if n_rows <= 1500 and n_cols <= 50:
+        fmt = {}
+        for c in money_cols:
+            fmt[c] = fmt_money_br
+        for c in percent_cols:
+            fmt[c] = fmt_percent_br
+
         try:
-            fmt = {c: "R$ {:,.2f}" for c in money_cols}
-            fmt.update({c: "{:.2f}%" for c in percent_cols})
             st.dataframe(_df.style.format(fmt), **kwargs)
             return
         except Exception:
             pass
 
-    # Fallback final: transforma so as colunas especiais em string
+    # Fallback final: converte para string
     for c in money_cols:
-        _df[c] = pd.to_numeric(_df[c], errors="coerce")
-        _df[c] = _df[c].map(lambda x: "" if pd.isna(x) else f"R$ {x:,.2f}")
+        _df[c] = pd.to_numeric(_df[c], errors="coerce").map(fmt_money_br)
     for c in percent_cols:
-        _df[c] = pd.to_numeric(_df[c], errors="coerce")
-        _df[c] = _df[c].map(lambda x: "" if pd.isna(x) else f"{x:.2f}%")
+        _df[c] = pd.to_numeric(_df[c], errors="coerce").map(fmt_percent_br)
 
     st.dataframe(_df, **kwargs)
 
@@ -128,27 +136,43 @@ def show_df(df, **kwargs):
 # -------------------------
 def main():
     st.set_page_config(page_title="Mercado Livre Ads", layout="wide")
-    st.title("Mercado Livre Ads - Dashboard e Relatorio")
+    st.title("Mercado Livre Ads - Dashboard e Relatório")
 
     with st.sidebar:
         st.caption(f"Atualizado em {datetime.now().strftime('%d/%m/%Y %H:%M')}")
         st.divider()
 
         st.subheader("Arquivos")
-        organico_file = st.file_uploader("Relatório de Desempenho de Vendas (Excel)", type=["xlsx"])
-        patrocinados_file = st.file_uploader("Relatorio Anuncios Patrocinados (Excel)", type=["xlsx"])
-        campanhas_file = st.file_uploader("Relatorio de Campanha (Excel)", type=["xlsx"])
+        organico_file = st.file_uploader(
+            "Relatório de Desempenho de Vendas (Excel)", type=["xlsx"]
+        )
+        patrocinados_file = st.file_uploader(
+            "Relatório Anúncios Patrocinados (Excel)", type=["xlsx"]
+        )
+        campanhas_file = st.file_uploader(
+            "Relatório de Campanha (Excel)", type=["xlsx"]
+        )
 
         st.divider()
         st.subheader("Modo Campanhas")
-        modo = st.radio("Como ler o relatorio de campanha", ["diario", "consolidado"], horizontal=True)
+        modo = st.radio(
+            "Como ler o relatório de campanha",
+            ["diario", "consolidado"],
+            horizontal=True,
+        )
 
         st.divider()
         st.subheader("Filtros de regra")
-        enter_visitas_min = st.number_input("Entrar em Ads: visitas min", min_value=0, value=50, step=10)
+
+        enter_visitas_min = st.number_input(
+            "Entrar em Ads: visitas mín",
+            min_value=0,
+            value=50,
+            step=10,
+        )
 
         enter_conv_min_pct = st.number_input(
-            "Entrar em Ads: conversao min (%)",
+            "Entrar em Ads: conversão mín (%)",
             min_value=0.0,
             value=5.0,
             step=0.5,
@@ -156,7 +180,7 @@ def main():
         )
 
         pause_invest_min = st.number_input(
-            "Pausar: investimento min (R$)",
+            "Pausar: investimento mín (R$)",
             min_value=0.0,
             value=100.0,
             step=50.0,
@@ -164,26 +188,26 @@ def main():
         )
 
         pause_cvr_max_pct = st.number_input(
-            "Pausar: CVR max (%)",
+            "Pausar: CVR máx (%)",
             min_value=0.0,
             value=1.0,
             step=0.5,
             format="%.2f",
         )
 
-        # Converte para decimal para o motor do relatorio
-        enter_conv_min = float(enter_conv_min_pct) / 100.0
-        pause_cvr_max = float(pause_cvr_max_pct) / 100.0
+        # conversão interna
+        enter_conv_min = enter_conv_min_pct / 100
+        pause_cvr_max = pause_cvr_max_pct / 100
 
         st.divider()
-        executar = st.button("Gerar relatorio", use_container_width=True)
+        executar = st.button("Gerar relatório", use_container_width=True)
 
     if not (organico_file and patrocinados_file and campanhas_file):
-        st.info("Envie os 3 arquivos na barra lateral para liberar o relatorio.")
+        st.info("Envie os 3 arquivos na barra lateral para liberar o relatório.")
         return
 
     if not executar:
-        st.warning("Quando estiver pronto, clique em Gerar relatorio.")
+        st.warning("Quando estiver pronto, clique em Gerar relatório.")
         return
 
     try:
@@ -209,89 +233,83 @@ def main():
             pause_cvr_max=float(pause_cvr_max),
         )
 
-        st.success("Relatorio gerado com sucesso.")
+        st.success("Relatório gerado com sucesso.")
 
     except Exception as e:
-        st.error("Deu erro ao processar os arquivos.")
+        st.error("Erro ao processar os arquivos.")
         st.exception(e)
         return
 
     # KPIs
     st.subheader("KPIs")
-    kpi_df = pd.DataFrame([kpis])
-
     cols = st.columns(4)
-    cols[0].metric("Investimento Ads", f"R$ {float(kpis.get('Investimento Ads (R$)', 0)):,.2f}")
-    cols[1].metric("Receita Ads", f"R$ {float(kpis.get('Receita Ads (R$)', 0)):,.2f}")
-    cols[2].metric("ROAS", f"{float(kpis.get('ROAS', 0)):.2f}")
+
+    cols[0].metric(
+        "Investimento Ads",
+        fmt_money_br(float(kpis.get("Investimento Ads (R$)", 0))),
+    )
+
+    cols[1].metric(
+        "Receita Ads",
+        fmt_money_br(float(kpis.get("Receita Ads (R$)", 0))),
+    )
+
+    cols[2].metric(
+        "ROAS",
+        fmt_number_br(float(kpis.get("ROAS", 0)), 2),
+    )
 
     tacos_val = float(kpis.get("TACOS", 0))
-    # se vier 0.12, mostra 12%; se vier 12, mostra 12%
     tacos_pct = tacos_val * 100 if tacos_val <= 2 else tacos_val
-    cols[3].metric("TACOS", f"{tacos_pct:.2f}%")
-
-    with st.expander("Ver tabela de KPIs"):
-        show_df(kpi_df)
+    cols[3].metric("TACOS", fmt_percent_br(tacos_pct))
 
     st.divider()
 
-    # Serie diaria
     if daily is not None:
-        st.subheader("Serie diaria")
+        st.subheader("Série diária")
         show_df(daily)
 
-    st.subheader("Painel geral (controle)")
-    panel = ml.build_control_panel(camp_strat)
-    show_df(panel, use_container_width=True)
+    st.subheader("Painel geral")
+    show_df(ml.build_control_panel(camp_strat), use_container_width=True)
 
-    st.divider()
-
-    st.subheader("Matriz CPI (campanhas com estrategia)")
+    st.subheader("Matriz CPI")
     show_df(camp_strat, use_container_width=True)
-
-    st.divider()
 
     c1, c2 = st.columns(2)
     with c1:
-        st.subheader("Pausar ou revisar campanhas")
+        st.subheader("Pausar ou revisar")
         show_df(pause, use_container_width=True)
     with c2:
-        st.subheader("Entrar em Ads (organico forte sem Ads)")
+        st.subheader("Entrar em Ads")
         show_df(enter, use_container_width=True)
 
     c3, c4 = st.columns(2)
     with c3:
-        st.subheader("Escalar orcamento")
+        st.subheader("Escalar orçamento")
         show_df(scale, use_container_width=True)
     with c4:
         st.subheader("Subir ACOS objetivo")
         show_df(acos, use_container_width=True)
 
-    st.divider()
-
     st.subheader("Download Excel")
-    try:
-        excel_bytes = ml.gerar_excel(
-            kpis=kpis,
-            camp_agg=camp_agg,
-            pause=pause,
-            enter=enter,
-            scale=scale,
-            acos=acos,
-            camp_strat=camp_strat,
-            daily=daily,
-        )
+    excel_bytes = ml.gerar_excel(
+        kpis=kpis,
+        camp_agg=camp_agg,
+        pause=pause,
+        enter=enter,
+        scale=scale,
+        acos=acos,
+        camp_strat=camp_strat,
+        daily=daily,
+    )
 
-        st.download_button(
-            "Baixar Excel do relatorio",
-            data=excel_bytes,
-            file_name="relatorio_meli_ads.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            use_container_width=True,
-        )
-    except Exception as e:
-        st.error("Nao consegui gerar o Excel.")
-        st.exception(e)
+    st.download_button(
+        "Baixar Excel do relatório",
+        data=excel_bytes,
+        file_name="relatorio_meli_ads.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        use_container_width=True,
+    )
 
 
 if __name__ == "__main__":
