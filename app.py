@@ -27,6 +27,26 @@ def _is_money_col(col_name: str) -> bool:
         return True
     return False
 
+
+# Colunas que devem ser exibidas como percentual (na exibicao).
+_PERCENT_COLS = {
+    "acos real",
+    "acos_real",
+    "acos objetivo n",
+    "acos_objetivo_n",
+    "cpi_share",
+    "cpi share",
+    "cpi_cum",
+    "cpi cum",
+    "con_visitas_vendas",
+    "con visitas vendas",
+}
+
+def _is_percent_col(col_name: str) -> bool:
+    c = str(col_name).strip().lower()
+    c = c.replace("__", "_")
+    return c in _PERCENT_COLS
+
 def show_df(df, **kwargs):
     """Mostra dataframe no Streamlit com colunas monetarias formatadas com R$.
     Formata apenas na exibicao, sem alterar os dados.
@@ -54,21 +74,39 @@ def show_df(df, **kwargs):
     _df = df.copy()
 
     money_cols = [c for c in _df.columns if _is_money_col(c)]
+    percent_cols = [c for c in _df.columns if _is_percent_col(c)]
 
-    # Se nao tem colunas de dinheiro, segue normal
-    if not money_cols:
+    # Ajuste seguro: se percentual vier em decimal (0.0558), converte para 5.58 apenas na exibicao.
+    for c in percent_cols:
+        ser = pd.to_numeric(_df[c], errors="coerce")
+        # heuristica: se os valores parecem fracao (<= 2), multiplica por 100
+        try:
+            vmax = ser.max(skipna=True)
+            if pd.notna(vmax) and vmax <= 2:
+                _df[c] = ser * 100
+            else:
+                _df[c] = ser
+        except Exception:
+            _df[c] = ser
+
+    # Se nao tem colunas especiais, segue normal
+    if not money_cols and not percent_cols:
         return _st_dataframe(_df, **kwargs)
 
     # Preferencia: usar column_config (mais leve que Styler)
+ (mais leve que Styler)
     try:
         col_config = {}
         for c in money_cols:
             col_config[c] = st.column_config.NumberColumn(format="R$ %.2f")
+        for c in percent_cols:
+            col_config[c] = st.column_config.NumberColumn(format="%.2f%%")
         return _st_dataframe(_df, column_config=col_config, **kwargs)
     except Exception:
         # Fallback: Styler so para tabelas pequenas
         if _df.shape[0] <= 1500 and _df.shape[1] <= 40:
             fmt = {c: "R$ {:,.2f}" for c in money_cols}
+            fmt.update({c: "{:.2f}%" for c in percent_cols})
             return _st_dataframe(_df.style.format(fmt), **kwargs)
 
         # Fallback final: converte so as colunas de dinheiro para string (leve)
