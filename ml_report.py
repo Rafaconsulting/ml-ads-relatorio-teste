@@ -8,6 +8,24 @@ EMOJI_RED = '🔴'     # red circle
 
 
 
+
+def _is_active_status(val) -> bool:
+    """Retorna True para status 'Ativa/Ativo/Active' (ignorando caixa e acentos)."""
+    if val is None:
+        return False
+    s = str(val).strip().lower()
+    # normaliza acentos básicos
+    s = (
+        s.replace("á","a").replace("à","a").replace("â","a").replace("ã","a")
+         .replace("é","e").replace("ê","e")
+         .replace("í","i")
+         .replace("ó","o").replace("ô","o").replace("õ","o")
+         .replace("ú","u")
+         .replace("ç","c")
+    )
+    return (s.startswith("ativa") or s.startswith("ativo") or s.startswith("active"))
+
+
 def _to_number_ptbr(val):
     # Converte strings pt-BR (1.234,56 | 52,00% | R$ 1.234,56) para float
     if val is None:
@@ -105,14 +123,6 @@ def load_organico(organico_file) -> pd.DataFrame:
               "Participacao","Conv_Visitas_Vendas","Conv_Visitas_Compradores"]:
         if c in org.columns:
             org[c] = _coerce_series_numeric_ptbr(org[c])
-
-    # Correção: no relatório do Mercado Livre, "Unidades vendidas" é a coluna correta para volume vendido.
-    # A coluna "Quantidade de vendas" pode representar pedidos e causar leitura errada.
-    # Padronizamos Qtd_Vendas a partir de Unidades (se disponível).
-    if "Unidades" in org.columns:
-        unidades_ok = pd.to_numeric(org["Unidades"], errors="coerce")
-        if unidades_ok.notna().any():
-            org["Qtd_Vendas"] = unidades_ok
 
     if "ID" in org.columns:
         org["ID"] = org["ID"].astype(str).str.replace("MLB", "", regex=False).str.replace(r"\.0$", "", regex=True)
@@ -567,6 +577,10 @@ def build_tables(
     pause_invest_min: float = 100.0,
     pause_cvr_max: float = 0.01
 ):
+    # Considerar apenas campanhas ATIVAS
+    if camp_agg is not None and not camp_agg.empty and "Status" in camp_agg.columns:
+        camp_agg = camp_agg[camp_agg["Status"].map(_is_active_status)].copy()
+
     camp_strat = add_strategy_fields(camp_agg)
 
     pause = camp_strat[
@@ -577,10 +591,15 @@ def build_tables(
     pause = pause.sort_values("Investimento", ascending=False)
 
     ads_ids = set(pat["ID"].dropna().astype(str).unique())
-    enter = org[
-        (org["Visitas"] >= enter_visitas_min) &
-        (org["Conv_Visitas_Vendas"] > enter_conv_min) &
-        (~org["ID"].astype(str).isin(ads_ids))
+    # Considerar apenas anúncios ATIVOS para recomendação de entrada em Ads
+    org_active = org
+    if org is not None and not org.empty and "Status" in org.columns:
+        org_active = org[org["Status"].map(_is_active_status)].copy()
+
+    enter = org_active[
+        (org_active["Visitas"] >= enter_visitas_min) &
+        (org_active["Conv_Visitas_Vendas"] > enter_conv_min) &
+        (~org_active["ID"].astype(str).isin(ads_ids))
     ].copy()
     enter["Codigo_MLB"] = "MLB" + enter["ID"].astype(str)
     enter["Ação"] = "INSERIR EM ADS"
