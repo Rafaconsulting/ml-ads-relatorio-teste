@@ -87,32 +87,60 @@ def _to_percent_br(x):
 
 
 def _fix_thousand_float(v):
-    """Corrige floats que representam milhares com 3 casas.
+    """Corrige valores grandes que vieram como float por erro de separador.
 
-    Ex: 3.144 -> 3144 (caso típico de valor com separador de milhar '.')
-    Só aplica quando:
-    - v é float
-    - v não é inteiro
-    - v * 1000 é (quase) inteiro
+    No relatório de desempenho, a coluna de Vendas Brutas às vezes aparece como:
+    - 3.144 (3 casas) para representar 3144
+    - 11.98 (2 casas) para representar 1198
+    - 2.43 (2 casas) para representar 243
+
+    Regra:
+    - Se o valor já é inteiro, mantém.
+    - Se (v*100) e/ou (v*1000) forem inteiros (quase), escolhe o mais plausível.
+      Quando ambos servem, preferimos *100 (evita ganhar um zero a mais).
     """
     try:
         if v is None:
             return np.nan
+
+        # Inteiros
         if isinstance(v, (int, np.integer)):
             return float(v)
+
+        # Floats
         if isinstance(v, (float, np.floating)):
             if np.isnan(v):
                 return np.nan
             fv = float(v)
             if fv.is_integer():
                 return fv
-            scaled = fv * 1000.0
-            if abs(scaled - round(scaled)) < 1e-6:
-                return float(round(scaled))
+
+            eps = 1e-6
+            cand100 = None
+            cand1000 = None
+
+            s100 = fv * 100.0
+            if abs(s100 - round(s100)) < eps:
+                cand100 = float(round(s100))
+
+            s1000 = fv * 1000.0
+            if abs(s1000 - round(s1000)) < eps:
+                cand1000 = float(round(s1000))
+
+            # Se os dois forem possíveis, prefira *100
+            if cand100 is not None and cand1000 is not None:
+                return cand100
+            if cand100 is not None:
+                return cand100
+            if cand1000 is not None:
+                return cand1000
+
             return fv
-        # se for texto, tenta normalizar como número BR
+
+        # Texto -> normaliza para número BR e tenta de novo
         nv = _to_number_br(v)
         return _fix_thousand_float(nv)
+
     except Exception:
         return np.nan
 
