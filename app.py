@@ -520,7 +520,9 @@ def main():
             format="%.2f",
         )
 
-        enter_conv_min = enter_conv_min_pct / 100
+        # IMPORTANTE: Conv_Visitas_Vendas e CVR chegam em pontos percentuais (ex.: 1,82 vira 1.82).
+        pause_cvr_max = pause_cvr_max_pct
+        enter_conv_min = enter_conv_min_pct
         pause_cvr_max = pause_cvr_max_pct / 100
 
         st.divider()
