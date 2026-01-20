@@ -369,6 +369,13 @@ def _is_id_col(col_name: str) -> bool:
         or "id do anuncio" in c
         or "id do anúncio" in c
         or "id campanha" in c
+        or c == "mlb_key"
+        or c == "codigo_mlb"
+        or c == "código_mlb"
+        or c == "item_id"
+        or c == "item id"
+        or c.startswith("mlb")
+        or "mlb" in c
     )
 
 
@@ -430,6 +437,8 @@ def _is_count_col(col_name: str) -> bool:
         "quantidade vendas",
         "orders",
         "pedidos",
+        "estoque",
+        "stock",
     }
 
     if c in targets:
