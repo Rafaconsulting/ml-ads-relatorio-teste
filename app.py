@@ -41,62 +41,107 @@ def fmt_int_br(x):
 # -------------------------
 # Estoque (opcional)
 # -------------------------
-def _digits_only(s: str) -> str:
+def _digits_only(s) -> str:
     s = "" if s is None else str(s)
     return re.sub(r"\D", "", s)
 
+def _norm_sku(s) -> str:
+    if s is None or (isinstance(s, float) and pd.isna(s)):
+        return ""
+    return str(s).strip().upper()
+
 def load_stock_file(file) -> pd.DataFrame:
     """
-    Espera um Excel com:
-    - Coluna B: MLB
-    - Coluna D: SKU
-    - Coluna G: Estoque
-    """
-    df = pd.read_excel(file, sheet_name=0)
-    # B, D, G => indices 1, 3, 6
-    if df.shape[1] < 7:
-        raise ValueError("Arquivo de estoque não tem colunas suficientes (precisa ter pelo menos até a coluna G).")
-    df = df.iloc[:, [1, 3, 6]].copy()
-    df.columns = ["MLB", "SKU", "Estoque"]
-    df["MLB"] = df["MLB"].map(_digits_only)
-    df["SKU"] = df["SKU"].astype(str).str.strip()
-    df["Estoque"] = pd.to_numeric(df["Estoque"], errors="coerce")
-    # remove linhas vazias
-    df = df[(df["MLB"].astype(str).str.len() > 0) | (df["SKU"].astype(str).str.len() > 0)]
-    return df
+    Lê o arquivo de estoque enviado pelo usuário.
 
-def _find_col(df: pd.DataFrame, needles: tuple[str, ...]):
-    for c in df.columns:
-        lc = str(c).strip().lower().replace("__", "_")
-        if any(n in lc for n in needles):
-            return c
-    return None
+    Arquivo base (Anuncios-....xlsx):
+    - Aba: "Anúncios"
+    - Coluna B: ITEM_ID (MLB)
+    - Coluna D: SKU
+    - Coluna G: QUANTITY (Estoque)
+
+    Observação: esse arquivo costuma ter linhas de cabeçalho antes da tabela,
+    por isso usamos skiprows para alinhar corretamente as colunas.
+    """
+    # Mantemos dtype=str para evitar conversões quebradas logo na leitura
+    df = pd.read_excel(file, sheet_name="Anúncios", skiprows=4, dtype=str)
+
+    # Preferência por nomes de coluna (mais seguro que posição)
+    expected = {"ITEM_ID", "SKU", "QUANTITY"}
+    if not expected.issubset(set(df.columns)):
+        # fallback por posição (B, D, G) caso o ML mude o cabeçalho
+        if df.shape[1] < 7:
+            raise ValueError("Arquivo de estoque não tem colunas suficientes (precisa ter pelo menos até a coluna G).")
+        df = df.iloc[:, [1, 3, 6]].copy()
+        df.columns = ["ITEM_ID", "SKU", "QUANTITY"]
+
+    df = df[["ITEM_ID", "SKU", "QUANTITY"]].copy()
+
+    # Filtra linhas válidas
+    df["ITEM_ID"] = df["ITEM_ID"].astype(str).str.strip()
+    df = df[df["ITEM_ID"].str.contains("MLB", na=False)]
+
+    # Normaliza chaves
+    df["MLB_key"] = df["ITEM_ID"].map(_digits_only)
+    df["SKU_key"] = df["SKU"].map(_norm_sku)
+
+    # Estoque como inteiro
+    df["Estoque"] = pd.to_numeric(df["QUANTITY"], errors="coerce").fillna(0).astype(int)
+
+    # Dedup: mantém o maior estoque por MLB
+    df = df.sort_values("Estoque", ascending=False).drop_duplicates(subset=["MLB_key"], keep="first")
+
+    return df[["MLB_key", "SKU_key", "Estoque"]]
 
 def enrich_with_stock(df: pd.DataFrame, stock_df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Enriquecimento por:
+    1) MLB (preferência)
+    2) SKU (fallback)
+    """
     if df is None or df.empty:
         return df
-    out = df.copy()
-    mlb_col = _find_col(out, ("mlb", "id_anuncio", "id anúncio", "id_anuncio", "id"))
-    sku_col = _find_col(out, ("sku",))
-
-    # Merge principal por MLB quando possível
-    if mlb_col and "MLB" in stock_df.columns:
-        tmp = out.copy()
-        tmp["_mlb_key"] = tmp[mlb_col].map(_digits_only)
-        merged = tmp.merge(stock_df[["MLB", "Estoque"]].drop_duplicates("MLB"), how="left", left_on="_mlb_key", right_on="MLB")
-        merged = merged.drop(columns=["MLB", "_mlb_key"], errors="ignore")
-        out = merged
-
-    # Fallback por SKU para quem ficou sem estoque
-    if sku_col:
+    if stock_df is None or stock_df.empty:
+        out = df.copy()
         if "Estoque" not in out.columns:
             out["Estoque"] = pd.NA
-        missing = out["Estoque"].isna()
-        if missing.any():
-            sku_map = stock_df[["SKU", "Estoque"]].drop_duplicates("SKU")
-            out.loc[missing, "Estoque"] = out.loc[missing, sku_col].astype(str).str.strip().map(dict(zip(sku_map["SKU"], sku_map["Estoque"])))
+        return out
 
-    out["Estoque"] = pd.to_numeric(out.get("Estoque"), errors="coerce")
+    out = df.copy()
+
+    # Chaves no dataframe principal
+    # Preferimos Codigo_MLB (MLBxxxxxxxx) e depois ID
+    if "Codigo_MLB" in out.columns:
+        out["MLB_key"] = out["Codigo_MLB"].map(_digits_only)
+    elif "ID" in out.columns:
+        out["MLB_key"] = out["ID"].map(_digits_only)
+    else:
+        out["MLB_key"] = ""
+
+    if "SKU" in out.columns:
+        out["SKU_key"] = out["SKU"].map(_norm_sku)
+    else:
+        out["SKU_key"] = ""
+
+    # 1) Merge por MLB_key
+    out = out.merge(
+        stock_df[["MLB_key", "Estoque"]].drop_duplicates("MLB_key"),
+        how="left",
+        on="MLB_key",
+        suffixes=("", "_stk"),
+    )
+
+    # 2) Fallback por SKU_key para quem ficou sem estoque
+    miss = out["Estoque"].isna()
+    if miss.any():
+        sku_map = (
+            stock_df[stock_df["SKU_key"].astype(str).str.len() > 0]
+            .drop_duplicates(subset=["SKU_key"])
+            .set_index("SKU_key")["Estoque"]
+        )
+        out.loc[miss, "Estoque"] = out.loc[miss, "SKU_key"].map(sku_map)
+
+    out["Estoque"] = pd.to_numeric(out["Estoque"], errors="coerce")
     return out
 
 def apply_stock_rules(enter_df: pd.DataFrame, scale_df: pd.DataFrame, acos_df: pd.DataFrame, pause_df: pd.DataFrame, *,
@@ -127,6 +172,8 @@ def apply_stock_rules(enter_df: pd.DataFrame, scale_df: pd.DataFrame, acos_df: p
         if df is None or df.empty:
             return df
         df2 = df.copy()
+        if "Estoque" not in df2.columns:
+            df2["Estoque"] = pd.NA
         df2["Estoque_Status"] = df2["Estoque"].map(_stock_value).map(_status)
         return df2
 
@@ -168,6 +215,7 @@ def apply_stock_rules(enter_df: pd.DataFrame, scale_df: pd.DataFrame, acos_df: p
 # -------------------------
 # Limpeza e ordenacao das tabelas (APENAS VISUAL)
 # -------------------------
+
 
 def _norm_col(col: str) -> str:
     return str(col).strip().lower().replace(' ', '_').replace('__', '_')
