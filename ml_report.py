@@ -141,6 +141,34 @@ def add_strategy_fields(
 ) -> pd.DataFrame:
     df = camp_agg.copy()
 
+    def _reorder_action_block(d: pd.DataFrame) -> pd.DataFrame:
+        """Padroniza leitura: Acao_Recomendada antes de Confianca_Dado e Motivo.
+        Mantem o restante na ordem original.
+        """
+        if d is None or d.empty:
+            return d
+
+        block = [c for c in ["Acao_Recomendada", "Confianca_Dado", "Motivo", "Impacto_Estimado_R$"] if c in d.columns]
+        if not block:
+            return d
+
+        # Remove o bloco e reinsere no ponto ideal
+        cols = [c for c in d.columns if c not in block]
+
+        # Insere o bloco no ponto de decisao: logo apos Perdidas (diagnostico), antes de campos auxiliares
+        anchor = None
+        for a in ["Perdidas_Class", "Perdidas_Orc", "ROAS_Real", "ROAS_Objetivo"]:
+            if a in cols:
+                anchor = a
+                break
+
+        if anchor is None:
+            return d[cols + block]
+
+        idx = cols.index(anchor) + 1
+        cols = cols[:idx] + block + cols[idx:]
+        return d[cols]
+
     for c in [
         "Receita","Investimento","Vendas","Cliques","Impressões","ROAS","CVR",
         "Perdidas_Orc","Perdidas_Class","ACOS Objetivo","Orçamento"
@@ -272,6 +300,8 @@ def add_strategy_fields(
     # Se confianca baixa, registra motivo claro
     df.loc[df["Confianca_Dado"] == "BAIXA", "Motivo"] = "Baixo volume, manter coletando dado"
 
+    # Garante ordem de leitura em todas as visoes que usam camp_strat
+    df = _reorder_action_block(df)
     return df
 
 
@@ -367,55 +397,62 @@ def build_opportunity_highlights(camp_agg_strat: pd.DataFrame) -> dict:
     return {"Locomotivas": locomotivas, "Minas": minas}
 
 
-def build_7_day_plan(camp_agg_strat: pd.DataFrame) -> pd.DataFrame:
+def build_15_day_plan(camp_agg_strat: pd.DataFrame) -> pd.DataFrame:
+    """Gera um plano de 15 dias respeitando a janela de 7 dias do algoritmo."""
     df = camp_agg_strat.copy()
 
-    cols_d1 = [c for c in ["Nome","Orçamento","Perdidas_Orc","ROAS_Real","Impacto_Estimado_R$","Confianca_Dado","Motivo","Acao_Recomendada"] if c in df.columns]
-    d1 = df[df["Quadrante"] == "ESCALA_ORCAMENTO"][cols_d1].copy()
-    d1["Dia"] = "Dia 1"
-    d1["Tarefa"] = "Aumentar orcamento com controle (+20% a +40%)"
+    # --- SEMANA 1: AJUSTES ---
+    cols_base = ["Nome", "Acao_Recomendada", "Confianca_Dado"]
+    
+    # Dia 1: Escala e Hemorragia (Urgente)
+    d1 = df[df["Quadrante"].isin(["ESCALA_ORCAMENTO", "HEMORRAGIA"])].copy()
+    d1["Dia"] = "Dia 01"
+    d1["Fase"] = "Semana 1: Ajustes"
+    d1["Tarefa"] = d1["Quadrante"].map({
+        "ESCALA_ORCAMENTO": "Aumentar orçamento (+20%)",
+        "HEMORRAGIA": "Pausar ou reduzir ROAS objetivo drasticamente"
+    })
 
-    cols_d2 = [c for c in ["Nome","ROAS_Objetivo","Perdidas_Class","Receita","Confianca_Dado","Motivo","Acao_Recomendada"] if c in df.columns]
-    d2 = df[df["Quadrante"] == "COMPETITIVIDADE"][cols_d2].copy()
-    d2["Dia"] = "Dia 2"
-    d2["Tarefa"] = "Baixar ROAS objetivo (abrir funil) apenas se houver elasticidade"
+    # Dia 3: Competitividade
+    d3 = df[df["Quadrante"] == "COMPETITIVIDADE"].copy()
+    d3["Dia"] = "Dia 03"
+    d3["Fase"] = "Semana 1: Ajustes"
+    d3["Tarefa"] = "Reduzir ROAS objetivo em 1 ou 2 pontos"
 
-    cols_d5 = [c for c in ["Nome","Investimento","Receita","ROAS_Real","Perdidas_Orc","Perdidas_Class","Confianca_Dado","Acao_Recomendada"] if c in df.columns]
-    d5 = df[df["Quadrante"].isin(["ESCALA_ORCAMENTO","COMPETITIVIDADE","HEMORRAGIA"])][cols_d5].copy()
-    d5["Dia"] = "Dia 5"
-    d5["Tarefa"] = "Monitorar investimento, ROAS e perdas"
+    # --- SEMANA 2: APRENDIZADO (TRAVA) ---
+    # Dia 8: Monitoramento das alterações da Semana 1
+    d8 = pd.concat([d1, d3], ignore_index=True)
+    d8["Dia"] = "Dia 08"
+    d8["Fase"] = "Semana 2: Aprendizado"
+    d8["Tarefa"] = "APRENDIZADO: Não alterar. Apenas monitorar ROAS e CPC."
 
-    plan = pd.concat([d1, d2, d5], ignore_index=True, sort=False)
+    # Dia 15: Reavaliação Final
+    d15 = d8[d8["Dia"] == "Dia 08"].copy()
+    d15["Dia"] = "Dia 15"
+    d15["Fase"] = "Semana 2: Aprendizado"
+    d15["Tarefa"] = "Fim do ciclo. Se ROAS estabilizou, planejar novo ajuste."
 
-    # Coluna usada pelo app para estilizar o plano (evita KeyError no subset=['Fase'])
-    if 'Fase' not in plan.columns:
-        def _fase(dia: str) -> str:
-            s = str(dia or '')
-            if s.startswith('Dia 1') or s.startswith('Dia 2'):
-                return 'AGORA'
-            if s.startswith('Dia 5'):
-                return 'MONITORAR'
-            return 'ACOMPANHAR'
-        plan['Fase'] = plan['Dia'].map(_fase)
-
-    return plan.sort_values(['Dia'], ascending=True)
+    cols_final = ["Dia", "Fase", "Nome", "Tarefa", "Acao_Recomendada", "Confianca_Dado"]
+    plan = pd.concat([d1, d3, d8, d15], ignore_index=True, sort=False)
+    
+    # Garantir que as colunas existam
+    for c in cols_final:
+        if c not in plan.columns:
+            plan[c] = ""
+            
+    return plan[cols_final].sort_values(["Dia", "Nome"], ascending=True)
 
 
-# Wrapper para compatibilidade com o app (Plano 15 dias)
-def build_15_day_plan(camp_agg_strat: pd.DataFrame) -> pd.DataFrame:
-    """Compatibilidade: o app chama build_15_day_plan.
+def build_7_day_plan(camp_agg_strat: pd.DataFrame) -> pd.DataFrame:
+    # Mantido por compatibilidade, mas o dashboard usará o de 15 dias
+    return build_15_day_plan(camp_agg_strat)
 
-    Mantemos a lógica do plano de 7 dias e usamos o mesmo output.
-    """
-    plan = build_7_day_plan(camp_agg_strat)
-    if 'Fase' not in plan.columns:
-        plan['Fase'] = 'ACOMPANHAR'
-    return plan
+
 def build_control_panel(camp_agg_strat: pd.DataFrame) -> pd.DataFrame:
     df = camp_agg_strat.copy()
     base_cols = [
         "Nome","Orçamento","ACOS Objetivo","ROAS_Objetivo","ROAS_Real",
-        "Perdidas_Orc","Perdidas_Class","Confianca_Dado","Motivo","Impacto_Estimado_R$","Acao_Recomendada"
+        "Perdidas_Orc","Perdidas_Class","Acao_Recomendada","Confianca_Dado","Motivo","Impacto_Estimado_R$"
     ]
     cols = [c for c in base_cols if c in df.columns]
     panel = df[cols].copy()
@@ -493,39 +530,83 @@ def build_tables(
 
 
 def gerar_excel(kpis, camp_agg, pause, enter, scale, acos, camp_strat, daily=None) -> bytes:
-    diagnosis = build_executive_diagnosis(camp_strat, daily=daily)
-    highlights = build_opportunity_highlights(camp_strat)
-    plan7 = build_7_day_plan(camp_strat)
-    panel = build_control_panel(camp_strat)
-
-    resumo = pd.DataFrame([kpis])
-    diag_df = pd.DataFrame([{
-        "Investimento": diagnosis["Investimento"],
-        "Receita": diagnosis["Receita"],
-        "Vendas": diagnosis["Vendas"],
-        "ROAS": diagnosis["ROAS"],
-        "ACOS_real": diagnosis["ACOS_real"],
-        "Veredito": diagnosis["Veredito"],
-        "Trend_cpc_proxy": diagnosis["Tendencias"]["cpc_proxy_up"],
-        "Trend_ticket": diagnosis["Tendencias"]["ticket_down"],
-        "Trend_roas": diagnosis["Tendencias"]["roas_down"],
-    }])
-
+    # Se for um snapshot simplificado, gera um Excel basico
+    is_snapshot = "Data_Snapshot" in camp_strat.columns
+    
     out = BytesIO()
     with pd.ExcelWriter(out, engine="openpyxl") as writer:
-        diag_df.to_excel(writer, index=False, sheet_name="DIAGNOSTICO_EXEC")
-        resumo.to_excel(writer, index=False, sheet_name="RESUMO")
-        panel.to_excel(writer, index=False, sheet_name="PAINEL_GERAL")
-        camp_strat.to_excel(writer, index=False, sheet_name="MATRIZ_CPI")
-        highlights["Locomotivas"].to_excel(writer, index=False, sheet_name="LOCOMOTIVAS")
-        highlights["Minas"].to_excel(writer, index=False, sheet_name="MINAS_LIMITADAS")
-        plan7.to_excel(writer, index=False, sheet_name="PLANO_7_DIAS")
-        pause.to_excel(writer, index=False, sheet_name="PAUSAR_CAMPANHAS")
-        enter.to_excel(writer, index=False, sheet_name="ENTRAR_EM_ADS")
-        scale.to_excel(writer, index=False, sheet_name="ESCALAR_ORCAMENTO")
-        acos.to_excel(writer, index=False, sheet_name="BAIXAR_ROAS")
-        camp_agg.to_excel(writer, index=False, sheet_name="BASE_CAMPANHAS_AGG")
-        if daily is not None:
-            daily.to_excel(writer, index=False, sheet_name="SERIE_DIARIA")
+        if is_snapshot:
+            camp_strat.to_excel(writer, index=False, sheet_name="Campanhas Estrategicas")
+        else:
+            diagnosis = build_executive_diagnosis(camp_strat, daily=daily)
+            highlights = build_opportunity_highlights(camp_strat)
+            plan7 = build_7_day_plan(camp_strat)
+            panel = build_control_panel(camp_strat)
+
+            resumo = pd.DataFrame([kpis])
+            diag_df = pd.DataFrame([{
+                "Investimento": diagnosis["Investimento"],
+                "Receita": diagnosis["Receita"],
+                "Vendas": diagnosis["Vendas"],
+                "ROAS": diagnosis["ROAS"],
+                "ACOS_real": diagnosis["ACOS_real"],
+                "Veredito": diagnosis["Veredito"],
+                "Trend_cpc_proxy": diagnosis["Tendencias"].get("cpc_proxy_up", 0),
+                "Trend_ticket": diagnosis["Tendencias"].get("ticket_down", 0),
+                "Trend_roas": diagnosis["Tendencias"].get("roas_down", 0),
+            }])
+
+            diag_df.to_excel(writer, index=False, sheet_name="DIAGNOSTICO_EXEC")
+            resumo.to_excel(writer, index=False, sheet_name="RESUMO")
+            panel.to_excel(writer, index=False, sheet_name="PAINEL_GERAL")
+            camp_strat.to_excel(writer, index=False, sheet_name="MATRIZ_CPI")
+            highlights["Locomotivas"].to_excel(writer, index=False, sheet_name="LOCOMOTIVAS")
+            highlights["Minas"].to_excel(writer, index=False, sheet_name="MINAS_LIMITADAS")
+            plan7.to_excel(writer, index=False, sheet_name="PLANO_7_DIAS")
+            pause.to_excel(writer, index=False, sheet_name="PAUSAR_CAMPANHAS")
+            enter.to_excel(writer, index=False, sheet_name="ENTRAR_EM_ADS")
+            scale.to_excel(writer, index=False, sheet_name="ESCALAR_ORCAMENTO")
+            acos.to_excel(writer, index=False, sheet_name="BAIXAR_ROAS")
+            camp_agg.to_excel(writer, index=False, sheet_name="BASE_CAMPANHAS_AGG")
+            if daily is not None:
+                daily.to_excel(writer, index=False, sheet_name="SERIE_DIARIA")
+                
     out.seek(0)
     return out.read()
+
+def compare_snapshots(df_current: pd.DataFrame, df_reference: pd.DataFrame) -> pd.DataFrame:
+    """Compara o estado atual das campanhas com um snapshot de referência."""
+    if df_current is None or df_reference is None:
+        return pd.DataFrame()
+    
+    # Garantir que temos as colunas necessárias
+    cols_ref = ["Nome", "ROAS_Real", "Investimento", "Receita", "Quadrante"]
+    df_ref_sub = df_reference[[c for c in cols_ref if c in df_reference.columns]].copy()
+    
+    # Renomear colunas de referência para evitar conflito
+    df_ref_sub = df_ref_sub.rename(columns={
+        "ROAS_Real": "ROAS_Ref",
+        "Investimento": "Invest_Ref",
+        "Receita": "Receita_Ref",
+        "Quadrante": "Quadrante_Ref"
+    })
+    
+    # Merge com os dados atuais
+    comparison = pd.merge(df_current, df_ref_sub, on="Nome", how="inner")
+    
+    # Calcular variações
+    comparison["Delta_ROAS"] = comparison["ROAS_Real"] - comparison["ROAS_Ref"]
+    comparison["Delta_Invest"] = comparison["Investimento"] - comparison["Invest_Ref"]
+    
+    # Identificar melhoria de status
+    def check_status_improvement(row):
+        q_ref = str(row.get("Quadrante_Ref", ""))
+        q_curr = str(row.get("Quadrante", ""))
+        if q_ref == q_curr: return "Mantido"
+        if q_ref == "HEMORRAGIA" and q_curr != "HEMORRAGIA": return "Recuperado"
+        if q_curr == "ESCALA_ORCAMENTO": return "Potencializado"
+        return "Alterado"
+        
+    comparison["Evolucao_Status"] = comparison.apply(check_status_improvement, axis=1)
+    
+    return comparison
