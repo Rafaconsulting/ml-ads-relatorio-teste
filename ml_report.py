@@ -59,20 +59,55 @@ def _coerce_series_numeric_ptbr(series: pd.Series) -> pd.Series:
 
 
 def load_organico(organico_file) -> pd.DataFrame:
-    org = pd.read_excel(organico_file, header=4)
-    org.columns = [
-        "ID","Titulo","Status","Variacao","SKU",
-        "Visitas","Qtd_Vendas","Compradores",
-        "Unidades","Vendas_Brutas","Participacao",
-        "Conv_Visitas_Vendas","Conv_Visitas_Compradores"
-    ]
-    org = org[org["ID"] != "ID do anúncio"].copy()
+    # Relatorio de desempenho de publicacoes (Excel exportado do Mercado Livre)
+    # Problema recorrente: a coluna "Vendas brutas" pode vir como numero (float)
+    # quando o Excel/pandas interpreta "3.144" como 3.144, mas no padrao pt-BR isso
+    # significa 3.144,00 (tres mil cento e quarenta e quatro).
+    # Para evitar isso, lemos como texto e convertemos com parser pt-BR.
+
+    # Descobre automaticamente a linha de cabecalho (onde aparece "ID do anúncio")
+    preview = pd.read_excel(organico_file, sheet_name="Relatório", header=None, nrows=40)
+    header_row = None
+    for i in range(len(preview)):
+        row = preview.iloc[i].astype(str)
+        if row.str.contains(r"\bID do anúncio\b", case=False, na=False).any():
+            header_row = i
+            break
+    if header_row is None:
+        # fallback historico
+        header_row = 4
+
+    org = pd.read_excel(organico_file, sheet_name="Relatório", header=header_row, dtype=str)
+
+    # Normaliza nomes esperados
+    rename_map = {
+        "ID do anúncio": "ID",
+        "Anúncio": "Titulo",
+        "Status atual": "Status",
+        "Variação": "Variacao",
+        "SKU": "SKU",
+        "Visitas únicas": "Visitas",
+        "Quantidade de vendas": "Qtd_Vendas",
+        "Compradores únicos": "Compradores",
+        "Unidades vendidas": "Unidades",
+        "Vendas brutas (BRL)": "Vendas_Brutas",
+        "% de participação": "Participacao",
+        "Conversão de visitas em vendas": "Conv_Visitas_Vendas",
+        "Conversão de visitas em compradores": "Conv_Visitas_Compradores",
+    }
+    org = org.rename(columns={k: v for k, v in rename_map.items() if k in org.columns})
+
+    # remove linhas repetidas de cabecalho, se existirem
+    if "ID" in org.columns:
+        org = org[org["ID"].astype(str).str.strip().str.lower() != "id do anúncio"].copy()
 
     for c in ["Visitas","Qtd_Vendas","Compradores","Unidades","Vendas_Brutas",
               "Participacao","Conv_Visitas_Vendas","Conv_Visitas_Compradores"]:
-        org[c] = _coerce_series_numeric_ptbr(org[c])
+        if c in org.columns:
+            org[c] = _coerce_series_numeric_ptbr(org[c])
 
-    org["ID"] = org["ID"].astype(str).str.replace("MLB", "", regex=False).str.replace(r"\.0$", "", regex=True)
+    if "ID" in org.columns:
+        org["ID"] = org["ID"].astype(str).str.replace("MLB", "", regex=False).str.replace(r"\.0$", "", regex=True)
     return org
 
 
