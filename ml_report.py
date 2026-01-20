@@ -577,11 +577,14 @@ def build_tables(
     pause_invest_min: float = 100.0,
     pause_cvr_max: float = 0.01
 ):
-    # Considerar apenas campanhas ATIVAS
-    if camp_agg is not None and not camp_agg.empty and "Status" in camp_agg.columns:
-        camp_agg = camp_agg[camp_agg["Status"].map(_is_active_status)].copy()
+    # KPIs devem considerar TODAS as campanhas (ativas e inativas).
+    camp_agg_all = camp_agg.copy() if camp_agg is not None else camp_agg
 
-    camp_strat = add_strategy_fields(camp_agg)
+    # Tabelas de ação consideram apenas campanhas ATIVAS
+    camp_agg_active = camp_agg
+    if camp_agg_active is not None and not camp_agg_active.empty and "Status" in camp_agg_active.columns:
+        camp_agg_active = camp_agg_active[camp_agg_active["Status"].map(_is_active_status)].copy()
+    camp_strat = add_strategy_fields(camp_agg_active)
 
     pause = camp_strat[
         (camp_strat["Investimento"] > pause_invest_min) &
@@ -618,9 +621,9 @@ def build_tables(
     if "Perdidas_Class" in acos.columns:
         acos = acos.sort_values(["Perdidas_Class","Receita"], ascending=[False, False])
 
-    invest_total = float(pd.to_numeric(camp_agg["Investimento"], errors="coerce").fillna(0).sum())
-    receita_total = float(pd.to_numeric(camp_agg["Receita"], errors="coerce").fillna(0).sum())
-    vendas_total = int(pd.to_numeric(camp_agg["Vendas"], errors="coerce").fillna(0).sum())
+    invest_total = float(pd.to_numeric(camp_agg_all["Investimento"], errors="coerce").fillna(0).sum())
+    receita_total = float(pd.to_numeric(camp_agg_all["Receita"], errors="coerce").fillna(0).sum())
+    vendas_total = int(pd.to_numeric(camp_agg_all["Vendas"], errors="coerce").fillna(0).sum())
     roas_total = (receita_total / invest_total) if invest_total else 0.0
 
     # TACOS = Investimento Ads / Faturamento total da conta.
@@ -629,7 +632,7 @@ def build_tables(
     tacos = (invest_total / faturamento_total) if faturamento_total else 0.0
 
     kpis = {
-        "Campanhas únicas": int(camp_agg["Nome"].nunique()),
+        "Campanhas únicas": int(camp_agg_all["Nome"].nunique()),
         "IDs patrocinados únicos": int(pat["ID"].nunique()),
         "Investimento Ads (R$)": invest_total,
         "Receita Ads (R$)": receita_total,
