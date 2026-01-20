@@ -1,119 +1,10 @@
-import re
-from io import BytesIO
-
-import numpy as np
 import pandas as pd
+from io import BytesIO
 
 EMOJI_GREEN = "\U0001F7E2"   # green circle
 EMOJI_YELLOW = "\U0001F7E1"  # yellow circle
 EMOJI_BLUE = "\U0001F535"    # blue circle
 EMOJI_RED = "\U0001F534"     # red circle
-
-
-def _normalize_id(x) -> str:
-    """Remove MLB e sufixo .0 para bater IDs entre relatórios."""
-    if x is None:
-        return ""
-    try:
-        if isinstance(x, float) and np.isnan(x):
-            return ""
-    except Exception:
-        pass
-    s = str(x).strip().replace("MLB", "")
-    if s.endswith(".0"):
-        s = s[:-2]
-    return s
-
-
-def _to_number_br(x):
-    """Converte texto BR/EN para número.
-
-    Suporta:
-    - 24.731,08 -> 24731.08
-    - 24,731.08 -> 24731.08
-    - 3.144 -> 3144 (milhar)
-    - R$ 1.234,56
-    """
-    if x is None:
-        return np.nan
-    if isinstance(x, (int, np.integer)):
-        return float(x)
-    if isinstance(x, (float, np.floating)):
-        try:
-            if np.isnan(x):
-                return np.nan
-        except Exception:
-            pass
-        return float(x)
-
-    s = str(x).strip()
-    if s == "" or s.lower() == "nan":
-        return np.nan
-
-    s = s.replace("R$", "").replace("\u00a0", " ").strip()
-    s = re.sub(r"[^0-9,\.\-]", "", s)
-    if s in {"", "-"}:
-        return np.nan
-
-    if "," in s and "." in s:
-        # separador decimal pelo último símbolo
-        if s.rfind(",") > s.rfind("."):
-            s = s.replace(".", "").replace(",", ".")
-        else:
-            s = s.replace(",", "")
-    elif "," in s:
-        s = s.replace(",", ".")
-    elif "." in s:
-        # pode ser milhar
-        if re.fullmatch(r"\d{1,3}(?:\.\d{3})+", s):
-            s = s.replace(".", "")
-
-    try:
-        return float(s)
-    except Exception:
-        return np.nan
-
-
-def _to_percent_br(x):
-    """Converte texto percentual BR/EN para fração."""
-    if x is None:
-        return np.nan
-
-    if isinstance(x, (int, np.integer, float, np.floating)):
-        try:
-            v = float(x)
-        except Exception:
-            return np.nan
-        if np.isnan(v):
-            return np.nan
-        return v if v <= 2 else (v / 100.0)
-
-    s = str(x).strip()
-    if s == "" or s.lower() == "nan":
-        return np.nan
-
-    s = s.replace("%", "").strip()
-    v = _to_number_br(s)
-    if pd.isna(v):
-        return np.nan
-    return float(v) / 100.0
-
-
-def _fix_thousand_misread(series: pd.Series) -> pd.Series:
-    """Corrige colunas inteiras lidas como 3.144 em vez de 3144.
-
-    Heurística conservadora:
-    - detecta padrão de texto com 3 casas após separador ("\d+[.,]\d{3}")
-    - se ocorrer em volume relevante, multiplica por 1000
-    """
-    s_raw = series.astype(str)
-    frac3_ratio = s_raw.str.match(r"^\s*\d+[\.,]\d{3}\s*$", na=False).mean()
-    num = series.apply(_to_number_br)
-
-    if frac3_ratio >= 0.15:
-        num = (num * 1000).round(0)
-
-    return num
 
 
 def load_organico(organico_file) -> pd.DataFrame:
@@ -126,65 +17,35 @@ def load_organico(organico_file) -> pd.DataFrame:
     ]
     org = org[org["ID"] != "ID do anúncio"].copy()
 
-    # Tipos: o relatório costuma vir com números e percentuais como texto.
-    # Corrigimos também o caso clássico de milhar lido como decimal (ex: 3.144 -> 3144).
-    num_cols = ["Visitas", "Qtd_Vendas", "Compradores", "Unidades", "Vendas_Brutas"]
-    pct_cols = ["Participacao", "Conv_Visitas_Vendas", "Conv_Visitas_Compradores"]
+    for c in ["Visitas","Qtd_Vendas","Compradores","Unidades","Vendas_Brutas",
+              "Participacao","Conv_Visitas_Vendas","Conv_Visitas_Compradores"]:
+        org[c] = pd.to_numeric(org[c], errors="coerce")
 
-    for c in num_cols:
-        if c in org.columns:
-            org[c] = _fix_thousand_misread(org[c])
-
-    for c in pct_cols:
-        if c in org.columns:
-            org[c] = org[c].apply(_to_percent_br)
-
-    org["ID"] = org["ID"].apply(_normalize_id)
+    org["ID"] = org["ID"].astype(str).str.replace("MLB", "", regex=False)
     return org
 
 
 def load_patrocinados(patrocinados_file) -> pd.DataFrame:
     pat = pd.read_excel(patrocinados_file, sheet_name="Relatório Anúncios patrocinados", header=1)
-    pat["ID"] = pat["Código do anúncio"].apply(_normalize_id)
+    pat["ID"] = pat["Código do anúncio"].astype(str).str.replace("MLB", "", regex=False)
 
-    num_cols = [
-        "Impressões",
-        "Cliques",
-        "Receita\n(Moeda local)",
-        "Investimento\n(Moeda local)",
-        "Vendas por publicidade\n(Diretas + Indiretas)",
-    ]
-    for c in num_cols:
+    for c in ["Impressões","Cliques","Receita\n(Moeda local)","Investimento\n(Moeda local)",
+              "Vendas por publicidade\n(Diretas + Indiretas)"]:
         if c in pat.columns:
-            pat[c] = _fix_thousand_misread(pat[c])
+            pat[c] = pd.to_numeric(pat[c], errors="coerce")
     return pat
 
 
 def _coerce_campaign_numeric(df: pd.DataFrame) -> pd.DataFrame:
-    # Números (BR/EN)
-    num_cols = [
-        "Impressões",
-        "Cliques",
-        "Receita\n(Moeda local)",
-        "Investimento\n(Moeda local)",
-        "Vendas por publicidade\n(Diretas + Indiretas)",
-        "ROAS\n(Receitas / Investimento)",
-        "Orçamento",
+    cols_num = [
+        "Impressões","Cliques","Receita\n(Moeda local)","Investimento\n(Moeda local)",
+        "Vendas por publicidade\n(Diretas + Indiretas)","ROAS\n(Receitas / Investimento)",
+        "CVR\n(Conversion rate)","% de impressões perdidas por orçamento",
+        "% de impressões perdidas por classificação","Orçamento","ACOS Objetivo"
     ]
-    for c in num_cols:
+    for c in cols_num:
         if c in df.columns:
-            df[c] = _fix_thousand_misread(df[c])
-
-    # Percentuais
-    pct_cols = [
-        "CVR\n(Conversion rate)",
-        "% de impressões perdidas por orçamento",
-        "% de impressões perdidas por classificação",
-        "ACOS Objetivo",
-    ]
-    for c in pct_cols:
-        if c in df.columns:
-            df[c] = df[c].apply(_to_percent_br)
+            df[c] = pd.to_numeric(df[c], errors="coerce")
     return df
 
 
@@ -271,10 +132,19 @@ def add_strategy_fields(
     lost_budget_mina: float = 40.0,
     lost_rank_gigante: float = 50.0,
     roas_hemorragia: float = 3.0,
+    # Travas incrementais
+    comp_invest_min: float = 200.0,
+    comp_clicks_min: int = 100,
+    comp_sales_min: int = 2,
+    hiper_roas_mult: float = 1.50,
+    impacto_factor: float = 0.30,
 ) -> pd.DataFrame:
     df = camp_agg.copy()
 
-    for c in ["Receita","Investimento","Vendas","Cliques","Impressões","ROAS","CVR","Perdidas_Orc","Perdidas_Class","ACOS Objetivo","Orçamento"]:
+    for c in [
+        "Receita","Investimento","Vendas","Cliques","Impressões","ROAS","CVR",
+        "Perdidas_Orc","Perdidas_Class","ACOS Objetivo","Orçamento"
+    ]:
         if c in df.columns:
             df[c] = pd.to_numeric(df[c], errors="coerce")
 
@@ -283,18 +153,52 @@ def add_strategy_fields(
 
     if "ACOS Objetivo" in df.columns:
         df["ACOS_Objetivo_N"] = df["ACOS Objetivo"].copy()
-        df.loc[df["ACOS_Objetivo_N"] > 1.5, "ACOS_Objetivo_N"] = df.loc[df["ACOS_Objetivo_N"] > 1.5, "ACOS_Objetivo_N"] / 100.0
+        df.loc[df["ACOS_Objetivo_N"] > 1.5, "ACOS_Objetivo_N"] = df.loc[
+            df["ACOS_Objetivo_N"] > 1.5, "ACOS_Objetivo_N"
+        ] / 100.0
     else:
         df["ACOS_Objetivo_N"] = pd.NA
 
-    total_receita = float(pd.to_numeric(df["Receita"], errors="coerce").fillna(0).sum())
+    def _roas_obj(acos_obj_n):
+        try:
+            if pd.notna(acos_obj_n) and float(acos_obj_n) > 0:
+                return 1.0 / float(acos_obj_n)
+        except Exception:
+            pass
+        return pd.NA
+
+    df["ROAS_Objetivo"] = df["ACOS_Objetivo_N"].map(_roas_obj)
+
+    total_receita = float(pd.to_numeric(df.get("Receita"), errors="coerce").fillna(0).sum())
     receita_relevante = max(500.0, total_receita * 0.05)
 
     df = df.sort_values("Receita", ascending=False).reset_index(drop=True)
-    df["Receita"] = df["Receita"].fillna(0)
+    df["Receita"] = pd.to_numeric(df.get("Receita"), errors="coerce").fillna(0)
     df["CPI_Share"] = df["Receita"] / total_receita if total_receita else 0.0
     df["CPI_Cum"] = df["CPI_Share"].cumsum()
     df["CPI_80"] = df["CPI_Cum"] <= 0.80
+
+    # Confianca de dado (nao muda o calculo, apenas blinda recomendacao)
+    def _confidence(row):
+        invest = float(row.get("Investimento", 0) or 0)
+        clicks = float(row.get("Cliques", 0) or 0)
+        sales = float(row.get("Vendas", 0) or 0)
+        if (invest >= 300.0) or (clicks >= 200) or (sales >= 5):
+            return "ALTA"
+        if (invest >= 100.0) or (clicks >= 80) or (sales >= 2):
+            return "MEDIA"
+        return "BAIXA"
+
+    df["Confianca_Dado"] = df.apply(_confidence, axis=1)
+
+    def _impacto_estimado(row):
+        receita = float(row.get("Receita", 0) or 0)
+        lost_b = float(row.get("Perdidas_Orc", 0) or 0)
+        if lost_b <= 0:
+            return 0.0
+        return receita * (lost_b / 100.0) * float(impacto_factor)
+
+    df["Impacto_Estimado_R$"] = df.apply(_impacto_estimado, axis=1)
 
     def classify(row):
         roas = float(row.get("ROAS_Real", 0) or 0)
@@ -302,24 +206,59 @@ def add_strategy_fields(
         lost_r = float(row.get("Perdidas_Class", 0) or 0)
         receita = float(row.get("Receita", 0) or 0)
         acos_real = float(row.get("ACOS_Real", 0) or 0)
-        acos_obj = row.get("ACOS_Objetivo_N", None)
+        roas_obj = row.get("ROAS_Objetivo", pd.NA)
+        invest = float(row.get("Investimento", 0) or 0)
+        clicks = int(float(row.get("Cliques", 0) or 0))
+        sales = int(float(row.get("Vendas", 0) or 0))
 
         if (roas >= roas_mina) and (lost_b >= lost_budget_mina):
             return "ESCALA_ORCAMENTO"
+
+        # Competitividade (Rank) com trava de elasticidade
         if (receita >= receita_relevante) and (lost_r >= lost_rank_gigante):
-            return "COMPETITIVIDADE"
+            volume_ok = (invest >= comp_invest_min) and ((clicks >= comp_clicks_min) or (sales >= comp_sales_min))
+            if volume_ok and pd.notna(roas_obj) and float(roas_obj) > 0:
+                # Se estiver hiper eficiente vs objetivo, manter estavel
+                if roas > (float(roas_obj) * float(hiper_roas_mult)):
+                    return "ESTAVEL"
+                return "COMPETITIVIDADE"
 
         hem = (roas > 0 and roas < roas_hemorragia)
-        if pd.notna(acos_obj) and acos_obj and float(acos_obj) > 0:
-            if acos_real > (float(acos_obj) * (1.0 + acos_over_pct)):
+        acos_obj_n = row.get("ACOS_Objetivo_N", pd.NA)
+        if pd.notna(acos_obj_n) and acos_obj_n and float(acos_obj_n) > 0:
+            if acos_real > (float(acos_obj_n) * (1.0 + acos_over_pct)):
                 hem = True
         if hem:
             return "HEMORRAGIA"
+
         return "ESTAVEL"
 
     df["Quadrante"] = df.apply(classify, axis=1)
 
-    def action(q):
+    def motivo(row):
+        q = row.get("Quadrante")
+        if q == "ESCALA_ORCAMENTO":
+            return "ROAS forte com perda por orcamento alta"
+        if q == "COMPETITIVIDADE":
+            return "Receita relevante com perda por classificacao alta e ROAS perto do objetivo"
+        if q == "HEMORRAGIA":
+            acos_obj_n = row.get("ACOS_Objetivo_N", pd.NA)
+            acos_real = float(row.get("ACOS_Real", 0) or 0)
+            if pd.notna(acos_obj_n) and float(acos_obj_n) > 0 and acos_real > (float(acos_obj_n) * (1.0 + acos_over_pct)):
+                return "ACOS real acima do objetivo"
+            return "ROAS abaixo do minimo"
+        return "Sem sinal claro de escala ou risco"
+
+    df["Motivo"] = df.apply(motivo, axis=1)
+
+    def action(row):
+        q = row.get("Quadrante")
+        conf = row.get("Confianca_Dado")
+
+        # Baixa confianca, nunca empurra ajuste. Mantem como lista de atencao.
+        if conf == "BAIXA":
+            return f"{EMOJI_BLUE} Manter"
+
         if q == "ESCALA_ORCAMENTO":
             return f"{EMOJI_GREEN} Aumentar orcamento"
         if q == "COMPETITIVIDADE":
@@ -328,7 +267,11 @@ def add_strategy_fields(
             return f"{EMOJI_RED} Revisar/pausar"
         return f"{EMOJI_BLUE} Manter"
 
-    df["Acao_Recomendada"] = df["Quadrante"].apply(action)
+    df["Acao_Recomendada"] = df.apply(action, axis=1)
+
+    # Se confianca baixa, registra motivo claro
+    df.loc[df["Confianca_Dado"] == "BAIXA", "Motivo"] = "Baixo volume, manter coletando dado"
+
     return df
 
 
@@ -405,7 +348,12 @@ def build_opportunity_highlights(camp_agg_strat: pd.DataFrame) -> dict:
     locomotivas = locomotivas.sort_values("Receita", ascending=False).head(5)
 
     minas = df[df["Quadrante"] == "ESCALA_ORCAMENTO"].copy()
-    minas = minas.sort_values(["ROAS_Real", "Perdidas_Orc"], ascending=[False, False]).head(5)
+    # Prioriza impacto estimado e depois perda por orcamento
+    sort_cols = [c for c in ["Impacto_Estimado_R$", "Perdidas_Orc", "ROAS_Real"] if c in minas.columns]
+    if sort_cols:
+        minas = minas.sort_values(sort_cols, ascending=[False] * len(sort_cols)).head(5)
+    else:
+        minas = minas.sort_values(["ROAS_Real", "Perdidas_Orc"], ascending=[False, False]).head(5)
 
     def proj(row):
         receita = float(row.get("Receita", 0) or 0)
@@ -422,39 +370,47 @@ def build_opportunity_highlights(camp_agg_strat: pd.DataFrame) -> dict:
 def build_7_day_plan(camp_agg_strat: pd.DataFrame) -> pd.DataFrame:
     df = camp_agg_strat.copy()
 
-    d1 = df[df["Quadrante"] == "ESCALA_ORCAMENTO"][["Nome","Orçamento","Perdidas_Orc","ROAS_Real","Acao_Recomendada"]].copy()
+    cols_d1 = [c for c in ["Nome","Orçamento","Perdidas_Orc","ROAS_Real","Impacto_Estimado_R$","Confianca_Dado","Motivo","Acao_Recomendada"] if c in df.columns]
+    d1 = df[df["Quadrante"] == "ESCALA_ORCAMENTO"][cols_d1].copy()
     d1["Dia"] = "Dia 1"
-    d1["Tarefa"] = "Aumentar orcamento agressivamente (+20% a +40%)"
+    d1["Tarefa"] = "Aumentar orcamento com controle (+20% a +40%)"
 
-    d2 = df[df["Quadrante"] == "COMPETITIVIDADE"][["Nome","ACOS Objetivo","Perdidas_Class","Receita","Acao_Recomendada"]].copy()
+    cols_d2 = [c for c in ["Nome","ROAS_Objetivo","Perdidas_Class","Receita","Confianca_Dado","Motivo","Acao_Recomendada"] if c in df.columns]
+    d2 = df[df["Quadrante"] == "COMPETITIVIDADE"][cols_d2].copy()
     d2["Dia"] = "Dia 2"
-    d2["Tarefa"] = "Baixar ROAS objetivo (abrir funil) e destravar rank"
+    d2["Tarefa"] = "Baixar ROAS objetivo (abrir funil) apenas se houver elasticidade"
 
-    d5 = df[df["Quadrante"].isin(["ESCALA_ORCAMENTO","COMPETITIVIDADE","HEMORRAGIA"])][["Nome","Investimento","Receita","ROAS_Real","Acao_Recomendada"]].copy()
+    cols_d5 = [c for c in ["Nome","Investimento","Receita","ROAS_Real","Perdidas_Orc","Perdidas_Class","Confianca_Dado","Acao_Recomendada"] if c in df.columns]
+    d5 = df[df["Quadrante"].isin(["ESCALA_ORCAMENTO","COMPETITIVIDADE","HEMORRAGIA"])][cols_d5].copy()
     d5["Dia"] = "Dia 5"
-    d5["Tarefa"] = "Monitorar CPC proxy (Invest/Cliques), ROAS e perdas"
+    d5["Tarefa"] = "Monitorar investimento, ROAS e perdas"
 
     plan = pd.concat([d1, d2, d5], ignore_index=True, sort=False)
     return plan.sort_values(["Dia"], ascending=True)
 
 
+# Wrapper para compatibilidade com o app (Plano 15 dias)
 def build_15_day_plan(camp_agg_strat: pd.DataFrame) -> pd.DataFrame:
-    """Compatibilidade com o app.
+    """Compatibilidade: o app chama build_15_day_plan.
 
-    O app pode chamar build_15_day_plan. No momento a lógica de execução
-    respeita janelas semanais, então devolvemos o mesmo plano base.
+    Mantemos a lógica do plano de 7 dias e usamos o mesmo output.
     """
     return build_7_day_plan(camp_agg_strat)
 
 
 def build_control_panel(camp_agg_strat: pd.DataFrame) -> pd.DataFrame:
     df = camp_agg_strat.copy()
-    panel = df[[
-        "Nome","Orçamento","ACOS Objetivo","ROAS_Real","Perdidas_Orc","Perdidas_Class","Acao_Recomendada"
-    ]].copy()
+    base_cols = [
+        "Nome","Orçamento","ACOS Objetivo","ROAS_Objetivo","ROAS_Real",
+        "Perdidas_Orc","Perdidas_Class","Confianca_Dado","Motivo","Impacto_Estimado_R$","Acao_Recomendada"
+    ]
+    cols = [c for c in base_cols if c in df.columns]
+    panel = df[cols].copy()
+
     if "Receita" in df.columns:
         panel = panel.join(df[["Nome","Receita"]].set_index("Nome"), on="Nome")
         panel = panel.sort_values("Receita", ascending=False).drop(columns=["Receita"])
+
     return panel
 
 
@@ -489,13 +445,15 @@ def build_tables(
 
     scale = camp_strat[camp_strat["Quadrante"] == "ESCALA_ORCAMENTO"].copy()
     scale["Ação"] = "AUMENTAR ORCAMENTO"
-    if "Perdidas_Orc" in scale.columns:
+    if "Impacto_Estimado_R$" in scale.columns:
+        scale = scale.sort_values(["Impacto_Estimado_R$","Perdidas_Orc"], ascending=[False, False])
+    elif "Perdidas_Orc" in scale.columns:
         scale = scale.sort_values("Perdidas_Orc", ascending=False)
 
     acos = camp_strat[camp_strat["Quadrante"] == "COMPETITIVIDADE"].copy()
     acos["Ação"] = "BAIXAR ROAS OBJETIVO"
     if "Perdidas_Class" in acos.columns:
-        acos = acos.sort_values("Perdidas_Class", ascending=False)
+        acos = acos.sort_values(["Perdidas_Class","Receita"], ascending=[False, False])
 
     invest_total = float(pd.to_numeric(camp_agg["Investimento"], errors="coerce").fillna(0).sum())
     receita_total = float(pd.to_numeric(camp_agg["Receita"], errors="coerce").fillna(0).sum())
