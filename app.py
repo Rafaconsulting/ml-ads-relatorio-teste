@@ -671,7 +671,7 @@ def main():
         st.divider()
 
         st.subheader("Arquivos")
-        organico_file = st.file_uploader("Relatorio de Desempenho de Vendas (Excel)", type=["xlsx"])
+        organico_file = st.file_uploader("Relatorio de Desempenho de Anúncios (Excel)", type=["xlsx"])
         patrocinados_file = st.file_uploader("Relatorio Anuncios Patrocinados (Excel)", type=["xlsx"])
         campanhas_file = st.file_uploader("Relatorio de Campanha (Excel)", type=["xlsx"])
         
