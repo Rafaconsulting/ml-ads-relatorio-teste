@@ -3,6 +3,7 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 from datetime import datetime
+import re
 
 import ml_report as ml
 
@@ -36,6 +37,133 @@ def fmt_int_br(x):
     except Exception:
         return ""
 
+
+# -------------------------
+# Estoque (opcional)
+# -------------------------
+def _digits_only(s: str) -> str:
+    s = "" if s is None else str(s)
+    return re.sub(r"\D", "", s)
+
+def load_stock_file(file) -> pd.DataFrame:
+    """
+    Espera um Excel com:
+    - Coluna B: MLB
+    - Coluna D: SKU
+    - Coluna G: Estoque
+    """
+    df = pd.read_excel(file, sheet_name=0)
+    # B, D, G => indices 1, 3, 6
+    if df.shape[1] < 7:
+        raise ValueError("Arquivo de estoque não tem colunas suficientes (precisa ter pelo menos até a coluna G).")
+    df = df.iloc[:, [1, 3, 6]].copy()
+    df.columns = ["MLB", "SKU", "Estoque"]
+    df["MLB"] = df["MLB"].map(_digits_only)
+    df["SKU"] = df["SKU"].astype(str).str.strip()
+    df["Estoque"] = pd.to_numeric(df["Estoque"], errors="coerce")
+    # remove linhas vazias
+    df = df[(df["MLB"].astype(str).str.len() > 0) | (df["SKU"].astype(str).str.len() > 0)]
+    return df
+
+def _find_col(df: pd.DataFrame, needles: tuple[str, ...]):
+    for c in df.columns:
+        lc = str(c).strip().lower().replace("__", "_")
+        if any(n in lc for n in needles):
+            return c
+    return None
+
+def enrich_with_stock(df: pd.DataFrame, stock_df: pd.DataFrame) -> pd.DataFrame:
+    if df is None or df.empty:
+        return df
+    out = df.copy()
+    mlb_col = _find_col(out, ("mlb", "id_anuncio", "id anúncio", "id_anuncio", "id"))
+    sku_col = _find_col(out, ("sku",))
+
+    # Merge principal por MLB quando possível
+    if mlb_col and "MLB" in stock_df.columns:
+        tmp = out.copy()
+        tmp["_mlb_key"] = tmp[mlb_col].map(_digits_only)
+        merged = tmp.merge(stock_df[["MLB", "Estoque"]].drop_duplicates("MLB"), how="left", left_on="_mlb_key", right_on="MLB")
+        merged = merged.drop(columns=["MLB", "_mlb_key"], errors="ignore")
+        out = merged
+
+    # Fallback por SKU para quem ficou sem estoque
+    if sku_col:
+        if "Estoque" not in out.columns:
+            out["Estoque"] = pd.NA
+        missing = out["Estoque"].isna()
+        if missing.any():
+            sku_map = stock_df[["SKU", "Estoque"]].drop_duplicates("SKU")
+            out.loc[missing, "Estoque"] = out.loc[missing, sku_col].astype(str).str.strip().map(dict(zip(sku_map["SKU"], sku_map["Estoque"])))
+
+    out["Estoque"] = pd.to_numeric(out.get("Estoque"), errors="coerce")
+    return out
+
+def apply_stock_rules(enter_df: pd.DataFrame, scale_df: pd.DataFrame, acos_df: pd.DataFrame, pause_df: pd.DataFrame, *,
+                      estoque_min_ads: int, estoque_baixo: int, estoque_critico: int, tratar_estoque_vazio_como_zero: bool):
+    """Ajusta apenas para exibicao: bloqueia entrar em Ads por estoque e marca freio em campanhas."""
+    blocked = pd.DataFrame()
+
+    def _stock_value(s):
+        if s is None or (isinstance(s, float) and pd.isna(s)):
+            return 0 if tratar_estoque_vazio_como_zero else None
+        try:
+            return float(s)
+        except Exception:
+            return 0 if tratar_estoque_vazio_como_zero else None
+
+    def _status(v):
+        if v is None:
+            return "SEM_ESTOQUE"
+        if v <= 0:
+            return "ZERADO"
+        if v <= estoque_critico:
+            return "CRITICO"
+        if v <= estoque_baixo:
+            return "BAIXO"
+        return "OK"
+
+    def _add_status(df):
+        if df is None or df.empty:
+            return df
+        df2 = df.copy()
+        df2["Estoque_Status"] = df2["Estoque"].map(_stock_value).map(_status)
+        return df2
+
+    enter2 = _add_status(enter_df)
+    scale2 = _add_status(scale_df)
+    acos2  = _add_status(acos_df)
+    pause2 = _add_status(pause_df)
+
+    # Bloquear "Entrar em Ads" se estoque insuficiente
+    if enter2 is not None and not enter2.empty and "Estoque" in enter2.columns:
+        v = enter2["Estoque"].map(_stock_value)
+        mask_block = v.notna() & (v < float(estoque_min_ads))
+        if mask_block.any():
+            blocked = enter2.loc[mask_block].copy()
+            blocked["Motivo_Estoque"] = "Estoque abaixo do minimo para entrar em Ads"
+            enter2 = enter2.loc[~mask_block].copy()
+
+    # Marcar freio nas tabelas de escala/ROAS se estoque baixo/critico
+    def _mark_freio(df):
+        if df is None or df.empty or "Estoque" not in df.columns:
+            return df
+        df3 = df.copy()
+        v = df3["Estoque"].map(_stock_value)
+        mask_crit = v.notna() & (v <= float(estoque_critico))
+        mask_low  = v.notna() & (v > float(estoque_critico)) & (v <= float(estoque_baixo))
+        if "Acao_Recomendada" in df3.columns:
+            df3.loc[mask_crit, "Acao_Recomendada"] = "FREAR, ESTOQUE CRITICO"
+            df3.loc[mask_low,  "Acao_Recomendada"] = "FREAR, ESTOQUE BAIXO"
+        if "Motivo" in df3.columns:
+            df3.loc[mask_crit, "Motivo"] = (df3.loc[mask_crit, "Motivo"].astype(str).str.strip() + " | estoque critico")
+            df3.loc[mask_low,  "Motivo"] = (df3.loc[mask_low,  "Motivo"].astype(str).str.strip() + " | estoque baixo")
+        return df3
+
+    scale2 = _mark_freio(scale2)
+    acos2  = _mark_freio(acos2)
+
+    return enter2, scale2, acos2, pause2, blocked
 
 # -------------------------
 # Limpeza e ordenacao das tabelas (APENAS VISUAL)
@@ -493,6 +621,19 @@ def main():
         st.divider()
         st.subheader("Comparativo (Opcional)")
         snapshot_file = st.file_uploader("Snapshot de Referencia (Excel)", type=["xlsx"], help="Arquivo gerado ha 15 dias para comparar evolucao")
+        st.divider()
+        st.subheader("Estoque (Opcional)")
+        usar_estoque = st.checkbox("Ativar visão de estoque", value=False)
+        estoque_file = st.file_uploader("Arquivo de estoque (Excel)", type=["xlsx"], disabled=not usar_estoque)
+        if usar_estoque:
+            cA, cB, cC = st.columns(3)
+            with cA:
+                estoque_min_ads = st.number_input("Mínimo p/ entrar em Ads (un)", min_value=0, value=6, step=1)
+            with cB:
+                estoque_baixo = st.number_input("Estoque baixo (un)", min_value=0, value=6, step=1)
+            with cC:
+                estoque_critico = st.number_input("Estoque crítico (un)", min_value=0, value=2, step=1)
+            tratar_estoque_vazio_como_zero = st.checkbox("Tratar estoque ausente como zero", value=False)
 
         st.divider()
         st.subheader("Filtros de regra")
@@ -521,9 +662,8 @@ def main():
         )
 
         # IMPORTANTE: Conv_Visitas_Vendas e CVR chegam em pontos percentuais (ex.: 1,82 vira 1.82).
-        pause_cvr_max = pause_cvr_max_pct
         enter_conv_min = enter_conv_min_pct
-        pause_cvr_max = pause_cvr_max_pct / 100
+        pause_cvr_max = pause_cvr_max_pct
 
         st.divider()
         executar = st.button("Gerar relatório", use_container_width=True)
@@ -555,6 +695,27 @@ def main():
         )
 
         st.success("Relatório gerado com sucesso.")
+        # -------------------------
+        # Estoque (opcional) - ajuste apenas para exibicao
+        # -------------------------
+        blocked_stock = pd.DataFrame()
+        pause_disp, enter_disp, scale_disp, acos_disp = pause, enter, scale, acos
+        if "usar_estoque" in locals() and usar_estoque and estoque_file is not None:
+            try:
+                stock_df = load_stock_file(estoque_file)
+                pause_disp = enrich_with_stock(pause_disp, stock_df)
+                enter_disp = enrich_with_stock(enter_disp, stock_df)
+                scale_disp = enrich_with_stock(scale_disp, stock_df)
+                acos_disp  = enrich_with_stock(acos_disp, stock_df)
+                enter_disp, scale_disp, acos_disp, pause_disp, blocked_stock = apply_stock_rules(
+                    enter_disp, scale_disp, acos_disp, pause_disp,
+                    estoque_min_ads=int(estoque_min_ads),
+                    estoque_baixo=int(estoque_baixo),
+                    estoque_critico=int(estoque_critico),
+                    tratar_estoque_vazio_como_zero=bool(tratar_estoque_vazio_como_zero),
+                )
+            except Exception as e:
+                st.warning(f"Não consegui aplicar a visão de estoque: {e}")
 
     except Exception as e:
         st.error("Erro ao processar os arquivos.")
@@ -641,13 +802,13 @@ def main():
     # -------------------------
     # Restante do dashboard (com os mesmos ajustes)
     # -------------------------
-    pause_view = prepare_df_for_view(replace_acos_obj_with_roas_obj(pause), drop_cpi_cols=True, drop_roas_generic=False)
+    pause_view = prepare_df_for_view(replace_acos_obj_with_roas_obj(pause_disp), drop_cpi_cols=True, drop_roas_generic=False)
     pause_fmt = format_table_br(pause_view)
-    enter_view = prepare_df_for_view(replace_acos_obj_with_roas_obj(enter), drop_cpi_cols=True, drop_roas_generic=False)
+    enter_view = prepare_df_for_view(replace_acos_obj_with_roas_obj(enter_disp), drop_cpi_cols=True, drop_roas_generic=False)
     enter_fmt = format_table_br(enter_view)
-    scale_view = prepare_df_for_view(replace_acos_obj_with_roas_obj(scale), drop_cpi_cols=True, drop_roas_generic=False)
+    scale_view = prepare_df_for_view(replace_acos_obj_with_roas_obj(scale_disp), drop_cpi_cols=True, drop_roas_generic=False)
     scale_fmt = format_table_br(scale_view)
-    acos_view = prepare_df_for_view(replace_acos_obj_with_roas_obj(acos), drop_cpi_cols=True, drop_roas_generic=False)
+    acos_view = prepare_df_for_view(replace_acos_obj_with_roas_obj(acos_disp), drop_cpi_cols=True, drop_roas_generic=False)
     acos_fmt = format_table_br(acos_view)
 
     c1, c2 = st.columns(2)
@@ -665,6 +826,28 @@ def main():
     with c4:
         st.subheader("⬇️ Baixar ROAS objetivo")
         st.dataframe(acos_fmt, use_container_width=True)
+
+    # -------------------------
+    # Visão de Estoque (opcional)
+    # -------------------------
+    if "usar_estoque" in locals() and usar_estoque and estoque_file is not None:
+        with st.expander("📦 Visão de Estoque", expanded=False):
+            if not blocked_stock.empty:
+                st.subheader("Bloqueados por estoque (iriam para Ads, mas não têm quantidade mínima)")
+                st.dataframe(format_table_br(prepare_df_for_view(replace_acos_obj_with_roas_obj(blocked_stock), drop_cpi_cols=True, drop_roas_generic=False)), use_container_width=True)
+            else:
+                st.write("Nenhum item foi bloqueado por estoque nas regras atuais.")
+
+            # Risco de ruptura dentro das ações
+            risco = pd.concat([pause_disp, scale_disp, acos_disp], ignore_index=True)
+            if "Estoque_Status" in risco.columns:
+                risco = risco[risco["Estoque_Status"].isin(["ZERADO", "CRITICO", "BAIXO"])].copy()
+            if not risco.empty:
+                st.subheader("Risco de ruptura nas ações")
+                risco_view = prepare_df_for_view(replace_acos_obj_with_roas_obj(risco), drop_cpi_cols=True, drop_roas_generic=False)
+                st.dataframe(format_table_br(risco_view), use_container_width=True)
+            else:
+                st.write("Sem alertas de estoque nas ações atuais.")
 
     # -------------------------
     # Download Excel
