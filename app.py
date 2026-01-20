@@ -569,9 +569,8 @@ def format_table_br(df: pd.DataFrame) -> pd.DataFrame:
             df_fmt[col] = serie_num.map(fmt_money_br)
 
         elif _is_percent_col(col):
-            vmax = serie_num.max(skipna=True)
-            if pd.notna(vmax) and vmax <= 2:
-                serie_num = serie_num * 100
+            # Percentuais (Conv_Visitas_Vendas, CVR, Perdidas etc) já estão em pontos percentuais
+            # (ex: 1.19 significa 1,19%). Não aplicar auto-escala por heurística.
             df_fmt[col] = serie_num.map(fmt_percent_br)
 
         elif _is_count_col(col):
