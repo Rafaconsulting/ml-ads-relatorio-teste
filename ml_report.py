@@ -50,6 +50,62 @@ def _to_number_br(x):
         return np.nan
 
 
+def _to_number_auto(x):
+    """Converte texto numérico em float lidando com formatos BR e EN.
+
+    Exemplos aceitos:
+    - '24.731,08' -> 24731.08
+    - '24,731.08' -> 24731.08
+    - '24731,08'  -> 24731.08
+    - '24731.08'  -> 24731.08
+    - 'R$ 2.906'  -> 2906
+    """
+    if x is None:
+        return np.nan
+    if isinstance(x, (int, np.integer)):
+        return float(x)
+    if isinstance(x, (float, np.floating)):
+        if np.isnan(x):
+            return np.nan
+        return float(x)
+
+    s = str(x).strip()
+    if s == "" or s.lower() == "nan":
+        return np.nan
+
+    s = (
+        s.replace("R$", "")
+        .replace("\u00a0", " ")
+        .replace(" ", "")
+        .strip()
+    )
+
+    # Se tiver '.' e ',' decide o decimal pelo último separador
+    if "." in s and "," in s:
+        last_dot = s.rfind(".")
+        last_comma = s.rfind(",")
+        if last_comma > last_dot:
+            # BR: '.' milhar, ',' decimal
+            s = s.replace(".", "").replace(",", ".")
+        else:
+            # EN: ',' milhar, '.' decimal
+            s = s.replace(",", "")
+    else:
+        # Só vírgula: assume decimal
+        if "," in s:
+            s = s.replace(".", "").replace(",", ".")
+        else:
+            # Só ponto: pode ser decimal OU milhar. Se padrão de milhar (grupos de 3), remove.
+            parts = s.split(".")
+            if len(parts) > 1 and all(len(p) == 3 for p in parts[1:]):
+                s = "".join(parts)
+
+    try:
+        return float(s)
+    except Exception:
+        return np.nan
+
+
 def _to_percent_br(x):
     """Converte texto percentual BR para fração.
 
@@ -174,18 +230,26 @@ def load_organico(organico_file) -> pd.DataFrame:
         if c in org.columns:
             org[c] = org[c].apply(_to_percent_br)
 
-    org["ID"] = org["ID"].astype(str).str.replace("MLB", "", regex=False)
+    org["ID"] = (
+        org["ID"].astype(str)
+        .str.replace("MLB", "", regex=False)
+        .str.replace(r"\\.0$", "", regex=True)
+    )
     return org
 
 
 def load_patrocinados(patrocinados_file) -> pd.DataFrame:
     pat = pd.read_excel(patrocinados_file, sheet_name="Relatório Anúncios patrocinados", header=1)
-    pat["ID"] = pat["Código do anúncio"].astype(str).str.replace("MLB", "", regex=False)
+    pat["ID"] = (
+        pat["Código do anúncio"].astype(str)
+        .str.replace("MLB", "", regex=False)
+        .str.replace(r"\\.0$", "", regex=True)
+    )
 
     for c in ["Impressões","Cliques","Receita\n(Moeda local)","Investimento\n(Moeda local)",
               "Vendas por publicidade\n(Diretas + Indiretas)"]:
         if c in pat.columns:
-            pat[c] = pd.to_numeric(pat[c], errors="coerce")
+            pat[c] = pat[c].apply(_to_number_auto)
     return pat
 
 
@@ -198,7 +262,7 @@ def _coerce_campaign_numeric(df: pd.DataFrame) -> pd.DataFrame:
     ]
     for c in cols_num:
         if c in df.columns:
-            df[c] = pd.to_numeric(df[c], errors="coerce")
+            df[c] = df[c].apply(_to_number_auto)
     return df
 
 
