@@ -1,6 +1,8 @@
-import pandas as pd
-import numpy as np
+import re
 from io import BytesIO
+
+import numpy as np
+import pandas as pd
 
 EMOJI_GREEN = "\U0001F7E2"   # green circle
 EMOJI_YELLOW = "\U0001F7E1"  # yellow circle
@@ -8,97 +10,63 @@ EMOJI_BLUE = "\U0001F535"    # blue circle
 EMOJI_RED = "\U0001F534"     # red circle
 
 
-# -------------------------
-# Normalizadores BR (número e %)
-# -------------------------
+def _normalize_id(x) -> str:
+    """Remove MLB e sufixo .0 para bater IDs entre relatórios."""
+    if x is None:
+        return ""
+    try:
+        if isinstance(x, float) and np.isnan(x):
+            return ""
+    except Exception:
+        pass
+    s = str(x).strip().replace("MLB", "")
+    if s.endswith(".0"):
+        s = s[:-2]
+    return s
+
 
 def _to_number_br(x):
-    """Converte texto BR para número.
+    """Converte texto BR/EN para número.
 
-    Regras:
-    - remove separador de milhar '.'
-    - troca vírgula decimal ',' por '.'
-    - mantém números já numéricos
+    Suporta:
+    - 24.731,08 -> 24731.08
+    - 24,731.08 -> 24731.08
+    - 3.144 -> 3144 (milhar)
+    - R$ 1.234,56
     """
     if x is None:
         return np.nan
     if isinstance(x, (int, np.integer)):
         return float(x)
     if isinstance(x, (float, np.floating)):
-        if np.isnan(x):
-            return np.nan
+        try:
+            if np.isnan(x):
+                return np.nan
+        except Exception:
+            pass
         return float(x)
 
     s = str(x).strip()
     if s == "" or s.lower() == "nan":
         return np.nan
 
-    # remove espaços e símbolos monetários comuns
-    s = (
-        s.replace("R$", "")
-        .replace("\u00a0", " ")
-        .replace(" ", "")
-        .strip()
-    )
-
-    # remove separador de milhar e ajusta decimal
-    s = s.replace(".", "").replace(",", ".")
-
-    try:
-        return float(s)
-    except Exception:
+    s = s.replace("R$", "").replace("\u00a0", " ").strip()
+    s = re.sub(r"[^0-9,\.\-]", "", s)
+    if s in {"", "-"}:
         return np.nan
 
-
-def _to_number_auto(x):
-    """Converte texto numérico em float lidando com formatos BR e EN.
-
-    Exemplos aceitos:
-    - '24.731,08' -> 24731.08
-    - '24,731.08' -> 24731.08
-    - '24731,08'  -> 24731.08
-    - '24731.08'  -> 24731.08
-    - 'R$ 2.906'  -> 2906
-    """
-    if x is None:
-        return np.nan
-    if isinstance(x, (int, np.integer)):
-        return float(x)
-    if isinstance(x, (float, np.floating)):
-        if np.isnan(x):
-            return np.nan
-        return float(x)
-
-    s = str(x).strip()
-    if s == "" or s.lower() == "nan":
-        return np.nan
-
-    s = (
-        s.replace("R$", "")
-        .replace("\u00a0", " ")
-        .replace(" ", "")
-        .strip()
-    )
-
-    # Se tiver '.' e ',' decide o decimal pelo último separador
-    if "." in s and "," in s:
-        last_dot = s.rfind(".")
-        last_comma = s.rfind(",")
-        if last_comma > last_dot:
-            # BR: '.' milhar, ',' decimal
+    if "," in s and "." in s:
+        # separador decimal pelo último símbolo
+        if s.rfind(",") > s.rfind("."):
             s = s.replace(".", "").replace(",", ".")
         else:
-            # EN: ',' milhar, '.' decimal
             s = s.replace(",", "")
-    else:
-        # Só vírgula: assume decimal
-        if "," in s:
-            s = s.replace(".", "").replace(",", ".")
-        else:
-            # Só ponto: pode ser decimal OU milhar. Se padrão de milhar (grupos de 3), remove.
-            parts = s.split(".")
-            if len(parts) > 1 and all(len(p) == 3 for p in parts[1:]):
-                s = "".join(parts)
+    elif "," in s:
+        s = s.replace(",", ".")
+    elif "." in s:
+        # pode ser milhar
+        if re.fullmatch(r"\d{1,3}(?:\.\d{3})+", s):
+            s = s.replace(".", "")
 
     try:
         return float(s)
@@ -107,18 +75,10 @@ def _to_number_auto(x):
 
 
 def _to_percent_br(x):
-    """Converte texto percentual BR para fração.
-
-    Exemplos:
-    - '4,10%' -> 0.041
-    - '0,03%' -> 0.0003
-    - 4.1 (já em %) -> 0.041
-    - 0.041 (já em fração) -> 0.041
-    """
+    """Converte texto percentual BR/EN para fração."""
     if x is None:
         return np.nan
 
-    # já numérico
     if isinstance(x, (int, np.integer, float, np.floating)):
         try:
             v = float(x)
@@ -126,10 +86,7 @@ def _to_percent_br(x):
             return np.nan
         if np.isnan(v):
             return np.nan
-        # se vier como 0-1 ou 0-2 assume fração
-        if v <= 2:
-            return v
-        return v / 100.0
+        return v if v <= 2 else (v / 100.0)
 
     s = str(x).strip()
     if s == "" or s.lower() == "nan":
@@ -142,63 +99,21 @@ def _to_percent_br(x):
     return float(v) / 100.0
 
 
-def _fix_thousand_float(v):
-    """Corrige valores grandes que vieram como float por erro de separador.
+def _fix_thousand_misread(series: pd.Series) -> pd.Series:
+    """Corrige colunas inteiras lidas como 3.144 em vez de 3144.
 
-    No relatório de desempenho, a coluna de Vendas Brutas às vezes aparece como:
-    - 3.144 (3 casas) para representar 3144
-    - 11.98 (2 casas) para representar 1198
-    - 2.43 (2 casas) para representar 243
-
-    Regra:
-    - Se o valor já é inteiro, mantém.
-    - Se (v*100) e/ou (v*1000) forem inteiros (quase), escolhe o mais plausível.
-      Quando ambos servem, preferimos *100 (evita ganhar um zero a mais).
+    Heurística conservadora:
+    - detecta padrão de texto com 3 casas após separador ("\d+[.,]\d{3}")
+    - se ocorrer em volume relevante, multiplica por 1000
     """
-    try:
-        if v is None:
-            return np.nan
+    s_raw = series.astype(str)
+    frac3_ratio = s_raw.str.match(r"^\s*\d+[\.,]\d{3}\s*$", na=False).mean()
+    num = series.apply(_to_number_br)
 
-        # Inteiros
-        if isinstance(v, (int, np.integer)):
-            return float(v)
+    if frac3_ratio >= 0.15:
+        num = (num * 1000).round(0)
 
-        # Floats
-        if isinstance(v, (float, np.floating)):
-            if np.isnan(v):
-                return np.nan
-            fv = float(v)
-            if fv.is_integer():
-                return fv
-
-            eps = 1e-6
-            cand100 = None
-            cand1000 = None
-
-            s100 = fv * 100.0
-            if abs(s100 - round(s100)) < eps:
-                cand100 = float(round(s100))
-
-            s1000 = fv * 1000.0
-            if abs(s1000 - round(s1000)) < eps:
-                cand1000 = float(round(s1000))
-
-            # Se os dois forem possíveis, prefira *100
-            if cand100 is not None and cand1000 is not None:
-                return cand100
-            if cand100 is not None:
-                return cand100
-            if cand1000 is not None:
-                return cand1000
-
-            return fv
-
-        # Texto -> normaliza para número BR e tenta de novo
-        nv = _to_number_br(v)
-        return _fix_thousand_float(nv)
-
-    except Exception:
-        return np.nan
+    return num
 
 
 def load_organico(organico_file) -> pd.DataFrame:
@@ -212,57 +127,64 @@ def load_organico(organico_file) -> pd.DataFrame:
     org = org[org["ID"] != "ID do anúncio"].copy()
 
     # Tipos: o relatório costuma vir com números e percentuais como texto.
-    # - Visitas/Qtd/...: número BR
-    # - Participacao/Conversoes: % BR -> fração
+    # Corrigimos também o caso clássico de milhar lido como decimal (ex: 3.144 -> 3144).
     num_cols = ["Visitas", "Qtd_Vendas", "Compradores", "Unidades", "Vendas_Brutas"]
     pct_cols = ["Participacao", "Conv_Visitas_Vendas", "Conv_Visitas_Compradores"]
 
     for c in num_cols:
         if c in org.columns:
-            org[c] = org[c].apply(_to_number_br)
-
-    # Correção extra para a coluna J (Vendas_Brutas) quando vier como float em milhares
-    # Ex: 3.144 deve virar 3144
-    if "Vendas_Brutas" in org.columns:
-        org["Vendas_Brutas"] = org["Vendas_Brutas"].apply(_fix_thousand_float)
+            org[c] = _fix_thousand_misread(org[c])
 
     for c in pct_cols:
         if c in org.columns:
             org[c] = org[c].apply(_to_percent_br)
 
-    org["ID"] = (
-        org["ID"].astype(str)
-        .str.replace("MLB", "", regex=False)
-        .str.replace(r"\\.0$", "", regex=True)
-    )
+    org["ID"] = org["ID"].apply(_normalize_id)
     return org
 
 
 def load_patrocinados(patrocinados_file) -> pd.DataFrame:
     pat = pd.read_excel(patrocinados_file, sheet_name="Relatório Anúncios patrocinados", header=1)
-    pat["ID"] = (
-        pat["Código do anúncio"].astype(str)
-        .str.replace("MLB", "", regex=False)
-        .str.replace(r"\\.0$", "", regex=True)
-    )
+    pat["ID"] = pat["Código do anúncio"].apply(_normalize_id)
 
-    for c in ["Impressões","Cliques","Receita\n(Moeda local)","Investimento\n(Moeda local)",
-              "Vendas por publicidade\n(Diretas + Indiretas)"]:
+    num_cols = [
+        "Impressões",
+        "Cliques",
+        "Receita\n(Moeda local)",
+        "Investimento\n(Moeda local)",
+        "Vendas por publicidade\n(Diretas + Indiretas)",
+    ]
+    for c in num_cols:
         if c in pat.columns:
-            pat[c] = pat[c].apply(_to_number_auto)
+            pat[c] = _fix_thousand_misread(pat[c])
     return pat
 
 
 def _coerce_campaign_numeric(df: pd.DataFrame) -> pd.DataFrame:
-    cols_num = [
-        "Impressões","Cliques","Receita\n(Moeda local)","Investimento\n(Moeda local)",
-        "Vendas por publicidade\n(Diretas + Indiretas)","ROAS\n(Receitas / Investimento)",
-        "CVR\n(Conversion rate)","% de impressões perdidas por orçamento",
-        "% de impressões perdidas por classificação","Orçamento","ACOS Objetivo"
+    # Números (BR/EN)
+    num_cols = [
+        "Impressões",
+        "Cliques",
+        "Receita\n(Moeda local)",
+        "Investimento\n(Moeda local)",
+        "Vendas por publicidade\n(Diretas + Indiretas)",
+        "ROAS\n(Receitas / Investimento)",
+        "Orçamento",
     ]
-    for c in cols_num:
+    for c in num_cols:
         if c in df.columns:
-            df[c] = df[c].apply(_to_number_auto)
+            df[c] = _fix_thousand_misread(df[c])
+
+    # Percentuais
+    pct_cols = [
+        "CVR\n(Conversion rate)",
+        "% de impressões perdidas por orçamento",
+        "% de impressões perdidas por classificação",
+        "ACOS Objetivo",
+    ]
+    for c in pct_cols:
+        if c in df.columns:
+            df[c] = df[c].apply(_to_percent_br)
     return df
 
 
@@ -514,6 +436,15 @@ def build_7_day_plan(camp_agg_strat: pd.DataFrame) -> pd.DataFrame:
 
     plan = pd.concat([d1, d2, d5], ignore_index=True, sort=False)
     return plan.sort_values(["Dia"], ascending=True)
+
+
+def build_15_day_plan(camp_agg_strat: pd.DataFrame) -> pd.DataFrame:
+    """Compatibilidade com o app.
+
+    O app pode chamar build_15_day_plan. No momento a lógica de execução
+    respeita janelas semanais, então devolvemos o mesmo plano base.
+    """
+    return build_7_day_plan(camp_agg_strat)
 
 
 def build_control_panel(camp_agg_strat: pd.DataFrame) -> pd.DataFrame:
