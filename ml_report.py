@@ -386,7 +386,19 @@ def build_7_day_plan(camp_agg_strat: pd.DataFrame) -> pd.DataFrame:
     d5["Tarefa"] = "Monitorar investimento, ROAS e perdas"
 
     plan = pd.concat([d1, d2, d5], ignore_index=True, sort=False)
-    return plan.sort_values(["Dia"], ascending=True)
+
+    # Coluna usada pelo app para estilizar o plano (evita KeyError no subset=['Fase'])
+    if 'Fase' not in plan.columns:
+        def _fase(dia: str) -> str:
+            s = str(dia or '')
+            if s.startswith('Dia 1') or s.startswith('Dia 2'):
+                return 'AGORA'
+            if s.startswith('Dia 5'):
+                return 'MONITORAR'
+            return 'ACOMPANHAR'
+        plan['Fase'] = plan['Dia'].map(_fase)
+
+    return plan.sort_values(['Dia'], ascending=True)
 
 
 # Wrapper para compatibilidade com o app (Plano 15 dias)
@@ -395,9 +407,10 @@ def build_15_day_plan(camp_agg_strat: pd.DataFrame) -> pd.DataFrame:
 
     Mantemos a lógica do plano de 7 dias e usamos o mesmo output.
     """
-    return build_7_day_plan(camp_agg_strat)
-
-
+    plan = build_7_day_plan(camp_agg_strat)
+    if 'Fase' not in plan.columns:
+        plan['Fase'] = 'ACOMPANHAR'
+    return plan
 def build_control_panel(camp_agg_strat: pd.DataFrame) -> pd.DataFrame:
     df = camp_agg_strat.copy()
     base_cols = [
