@@ -106,6 +106,14 @@ def load_organico(organico_file) -> pd.DataFrame:
         if c in org.columns:
             org[c] = _coerce_series_numeric_ptbr(org[c])
 
+    # Correção: no relatório do Mercado Livre, "Unidades vendidas" é a coluna correta para volume vendido.
+    # A coluna "Quantidade de vendas" pode representar pedidos e causar leitura errada.
+    # Padronizamos Qtd_Vendas a partir de Unidades (se disponível).
+    if "Unidades" in org.columns:
+        unidades_ok = pd.to_numeric(org["Unidades"], errors="coerce")
+        if unidades_ok.notna().any():
+            org["Qtd_Vendas"] = unidades_ok
+
     if "ID" in org.columns:
         org["ID"] = org["ID"].astype(str).str.replace("MLB", "", regex=False).str.replace(r"\.0$", "", regex=True)
     return org
