@@ -735,10 +735,11 @@ def main():
         st.subheader("Regras por anúncio (Ads)")
 
         with st.expander("Ajustar regras de anúncio", expanded=False):
+            st.caption("Impressões, cliques e investimento são filtros de volume. CTR e CVR são referências médias de e-commerce, ajuste conforme seu nicho.")
             ads_min_imp = st.number_input("Ads: impressões mín", min_value=0, value=500, step=100)
             ads_min_clk = st.number_input("Ads: cliques mín", min_value=0, value=10, step=5)
-            ads_ctr_min_abs = st.number_input("Ads: CTR mín (%)", min_value=0.0, value=0.10, step=0.05, format="%.2f")
-            ads_cvr_min = st.number_input("Ads: CVR mín (%)", min_value=0.0, value=0.80, step=0.10, format="%.2f")
+            ads_ctr_min_abs = st.number_input("Ads: CTR mín (%)  , referência 0,60%", min_value=0.0, value=0.60, step=0.05, format="%.2f")
+            ads_cvr_min = st.number_input("Ads: CVR mín (%)  , referência 1,00%", min_value=0.0, value=1.00, step=0.10, format="%.2f")
             ads_pause_invest_min = st.number_input("Ads: investimento mín p/ pausar (R$)", min_value=0.0, value=20.0, step=10.0, format="%.2f")
 
         # CTR e CVR acima são em pontos percentuais (ex.: 0,80 = 0.80%)
