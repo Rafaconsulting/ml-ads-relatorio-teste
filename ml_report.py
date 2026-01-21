@@ -1,12 +1,121 @@
 import pandas as pd
-import numpy as np
 from io import BytesIO
+import unicodedata
+import re
 
 EMOJI_GREEN = '🟢'   # green circle
 EMOJI_YELLOW = '🟡'  # yellow circle
 EMOJI_BLUE = '🔵'    # blue circle
 EMOJI_RED = '🔴'     # red circle
 
+
+
+
+
+def _norm_col_key(s: str) -> str:
+    s = "" if s is None else str(s)
+    s = s.strip().lower().replace("\n", " ").replace("\r", " ")
+    s = unicodedata.normalize("NFKD", s)
+    s = "".join(ch for ch in s if not unicodedata.combining(ch))
+    s = re.sub(r"\s+", " ", s)
+    s = re.sub(r"[^a-z0-9]+", "_", s)
+    return s.strip("_")
+
+
+def _standardize_cols_by_candidates(df: pd.DataFrame, candidates_map: dict) -> pd.DataFrame:
+    if df is None or df.empty:
+        return df
+
+    col_keys = {_norm_col_key(c): c for c in df.columns}
+    ren = {}
+
+    for canonical, cands in candidates_map.items():
+        for cand in cands:
+            k = _norm_col_key(cand)
+            if k in col_keys:
+                ren[col_keys[k]] = canonical
+                break
+
+    if ren:
+        df = df.rename(columns=ren)
+
+    return df
+
+
+_CAMPAIGN_COL_CANDIDATES = {
+    "Nome": ["Nome", "Nome da campanha", "Campanha", "Campaign"],
+    "Status": ["Status", "Status atual"],
+    "Orçamento": [
+        "Orçamento",
+        "Orcamento",
+        "Orçamento diário",
+        "Orcamento diario",
+        "Orçamento (Moeda local)",
+        "Orcamento (Moeda local)",
+    ],
+    "ACOS Objetivo": ["ACOS Objetivo", "ACOS objetivo", "ACOS alvo", "ACOS target"],
+    "Impressões": ["Impressões", "Impressoes", "Impressions"],
+    "Cliques": ["Cliques", "Clicks"],
+    "Receita\n(Moeda local)": [
+        "Receita\n(Moeda local)",
+        "Receita (Moeda local)",
+        "Receita (moeda local)",
+        "Receita",
+    ],
+    "Investimento\n(Moeda local)": [
+        "Investimento\n(Moeda local)",
+        "Investimento (Moeda local)",
+        "Investimento (moeda local)",
+        "Gasto",
+        "Spend",
+        "Investimento",
+    ],
+    "Vendas por publicidade\n(Diretas + Indiretas)": [
+        "Vendas por publicidade\n(Diretas + Indiretas)",
+        "Vendas por publicidade (Diretas + Indiretas)",
+        "Vendas por publicidade",
+        "Vendas por ads",
+        "Sales from ads",
+    ],
+    "ROAS\n(Receitas / Investimento)": [
+        "ROAS\n(Receitas / Investimento)",
+        "ROAS (Receitas / Investimento)",
+        "ROAS",
+    ],
+    "CVR\n(Conversion rate)": [
+        "CVR\n(Conversion rate)",
+        "CVR (Conversion rate)",
+        "CVR",
+        "Taxa de conversão",
+    ],
+    "% de impressões perdidas por orçamento": [
+        "% de impressões perdidas por orçamento",
+        "% de impressoes perdidas por orcamento",
+        "% de impressões perdidas por orçamento (IS lost budget)",
+    ],
+    "% de impressões perdidas por classificação": [
+        "% de impressões perdidas por classificação",
+        "% de impressoes perdidas por classificacao",
+        "% de impressões perdidas por classificação (IS lost rank)",
+    ],
+    "Desde": ["Desde", "Data", "Date"],
+}
+
+def _is_active_status(val) -> bool:
+    """Retorna True para status 'Ativa/Ativo/Active' (ignorando caixa e acentos)."""
+    if val is None:
+        return False
+    s = str(val).strip().lower()
+    # normaliza acentos básicos
+    s = (
+        s.replace("á","a").replace("à","a").replace("â","a").replace("ã","a")
+         .replace("é","e").replace("ê","e")
+         .replace("í","i")
+         .replace("ó","o").replace("ô","o").replace("õ","o")
+         .replace("ú","u")
+         .replace("ç","c")
+    )
+    return (s.startswith("ativa") or s.startswith("ativo") or s.startswith("active"))
 
 
 def _to_number_ptbr(val):
@@ -113,233 +222,32 @@ def load_organico(organico_file) -> pd.DataFrame:
 
 
 def load_patrocinados(patrocinados_file) -> pd.DataFrame:
-    """Lê o relatório de anúncios patrocinados (Ads). Nome da aba pode variar."""
-    xls = pd.ExcelFile(patrocinados_file)
-    sheets = list(xls.sheet_names)
-    candidates = ["Relatório Anúncios patrocinados", "Relatorio Anuncios patrocinados", "Anúncios patrocinados", "Anuncios patrocinados"]
-    sheet = None
-    lower_map = {s.lower(): s for s in sheets}
-    for c in candidates:
-        if c.lower() in lower_map:
-            sheet = lower_map[c.lower()]
-            break
-    if sheet is None:
-        for s in sheets:
-            sl = s.lower()
-            if "patrocin" in sl and "anún" in sl or ("patrocin" in sl and "anun" in sl):
-                sheet = s
-                break
-    if sheet is None and sheets:
-        sheet = sheets[0]
-    if sheet is None:
-        raise ValueError("Nenhuma aba encontrada no relatório de anúncios patrocinados.")
-    try:
-        pat = pd.read_excel(xls, sheet_name=sheet, header=1)
-    except Exception:
-        pat = pd.read_excel(xls, sheet_name=sheet, header=0)
+    pat = pd.read_excel(patrocinados_file, sheet_name="Relatório Anúncios patrocinados", header=1)
     pat["ID"] = pat["Código do anúncio"].astype(str).str.replace("MLB", "", regex=False).str.replace(r"\.0$", "", regex=True)
 
     for c in ["Impressões","Cliques","Receita\n(Moeda local)","Investimento\n(Moeda local)",
-              "Vendas por publicidade\n(Diretas + Indiretas)","CVR\n(Conversion rate)"]:
+              "Vendas por publicidade\n(Diretas + Indiretas)"]:
         if c in pat.columns:
             pat[c] = _coerce_series_numeric_ptbr(pat[c])
     return pat
-
-
-    for c in ["Impressões","Cliques","Receita\n(Moeda local)","Investimento\n(Moeda local)",
-              "Vendas por publicidade\n(Diretas + Indiretas)","CVR\n(Conversion rate)"]:
-        if c in pat.columns:
-            pat[c] = _coerce_series_numeric_ptbr(pat[c])
-    return pat
-
-
-def _safe_div(a, b):
-    a = pd.to_numeric(a, errors="coerce")
-    b = pd.to_numeric(b, errors="coerce")
-    out = a / b.replace({0: np.nan})
-    return out.replace([np.inf, -np.inf], np.nan)
-
-
-def _build_ads_df(pat: pd.DataFrame) -> pd.DataFrame:
-    """Normaliza o relatório de anúncios patrocinados para colunas padrão."""
-    df = pat.copy()
-
-    # Campanha
-    camp_col = None
-    for c in df.columns:
-        lc = str(c).strip().lower()
-        if "campanha" in lc:
-            camp_col = c
-            break
-    if camp_col is None:
-        camp_col = "Campanha"
-        df[camp_col] = "SEM_CAMPANHA"
-
-    # Título / Nome do anúncio
-    title_col = None
-    for c in df.columns:
-        lc = str(c).strip().lower()
-        if "título" in lc or "titulo" in lc or "nome do anúncio" in lc or "nome do anuncio" in lc:
-            title_col = c
-            break
-
-    # Status
-    status_col = None
-    for c in df.columns:
-        lc = str(c).strip().lower()
-        if "status" in lc:
-            status_col = c
-            break
-
-    out = pd.DataFrame({
-        "Campanha": df[camp_col].astype(str),
-        "ID": df.get("ID", pd.Series([None] * len(df))).astype(str),
-        "Titulo": df[title_col].astype(str) if title_col else "",
-        "Status": df[status_col].astype(str) if status_col else "",
-        "Impressoes": pd.to_numeric(df.get("Impressões", 0), errors="coerce").fillna(0),
-        "Cliques": pd.to_numeric(df.get("Cliques", 0), errors="coerce").fillna(0),
-        "Receita": pd.to_numeric(df.get("Receita\n(Moeda local)", 0), errors="coerce").fillna(0),
-        "Investimento": pd.to_numeric(df.get("Investimento\n(Moeda local)", 0), errors="coerce").fillna(0),
-        "Vendas": pd.to_numeric(df.get("Vendas por publicidade\n(Diretas + Indiretas)", 0), errors="coerce").fillna(0),
-    })
-
-    # CVR vindo do arquivo, se existir, senão calcula por clique
-    if "CVR\n(Conversion rate)" in df.columns:
-        out["CVR_Anuncio"] = pd.to_numeric(df["CVR\n(Conversion rate)"], errors="coerce")
-    else:
-        out["CVR_Anuncio"] = _safe_div(out["Vendas"], out["Cliques"]) * 100
-
-    out["ROAS_Real"] = _safe_div(out["Receita"], out["Investimento"])
-    out["ACOS_Real"] = _safe_div(out["Investimento"], out["Receita"]) * 100
-    out["CTR"] = _safe_div(out["Cliques"], out["Impressoes"]) * 100
-    return out
-
-
-def build_ads_actions(
-    pat: pd.DataFrame,
-    camp_strat: pd.DataFrame,
-    *,
-    min_imp: int = 2000,
-    min_clicks: int = 30,
-    min_invest: float = 20.0,
-    ctr_min_abs: float = 0.80
-):
-    """Gera tabelas táticas por anúncio, alinhadas à lógica do ML (sem CPC)."""
-    ads = _build_ads_df(pat)
-
-    # Considera apenas anúncios ativos para ações
-    ads["Status_norm"] = ads["Status"].astype(str).str.strip().str.lower()
-    ads_active = ads[ads["Status_norm"].str.contains("ativ", na=False)].copy()
-
-    # Referência por campanha (média)
-    ref = (
-        ads_active.groupby("Campanha", dropna=False)
-        .agg(CTR_camp=("CTR", "mean"), CVR_camp=("CVR_Anuncio", "mean"), ROAS_camp=("ROAS_Real", "mean"))
-        .reset_index()
-    )
-    ads_active = ads_active.merge(ref, on="Campanha", how="left")
-
-    # ROAS objetivo por campanha (se existir)
-    camp_map = camp_strat.copy()
-    if "Nome" in camp_map.columns and "Campanha" not in camp_map.columns:
-        camp_map = camp_map.rename(columns={"Nome": "Campanha"})
-
-    roas_obj_col = None
-    for c in camp_map.columns:
-        lc = str(c).lower().replace("_", " ")
-        if "roas" in lc and "objetivo" in lc:
-            roas_obj_col = c
-            break
-
-    if roas_obj_col:
-        ads_active = ads_active.merge(camp_map[["Campanha", roas_obj_col]], on="Campanha", how="left")
-        ads_active = ads_active.rename(columns={roas_obj_col: "ROAS_obj"})
-    else:
-        ads_active["ROAS_obj"] = np.nan
-
-    # Confiança mínima
-    qual = (ads_active["Impressoes"] >= float(min_imp)) | (ads_active["Cliques"] >= float(min_clicks))
-    ads_q = ads_active[qual].copy()
-
-    # Baseline (objetivo ou média da campanha)
-    roas_base = np.nanmax(
-        np.vstack([
-            ads_q["ROAS_obj"].fillna(0).to_numpy(),
-            ads_q["ROAS_camp"].fillna(0).to_numpy(),
-        ]),
-        axis=0,
-    )
-    ads_q["ROAS_base"] = roas_base
-
-    # Vencedores
-    winners = ads_q[
-        (ads_q["Investimento"] >= float(min_invest)) &
-        (ads_q["ROAS_Real"] >= ads_q["ROAS_base"] * 1.15) &
-        (ads_q["CVR_Anuncio"] >= ads_q["CVR_camp"] * 1.05)
-    ].copy()
-    winners["Acao_Recomendada"] = "MANTER"
-    winners["Motivo"] = "Performance acima da média da campanha"
-
-    # Prejudiciais
-    bad = ads_q[
-        (ads_q["Investimento"] >= float(min_invest)) &
-        (
-            (ads_q["Vendas"] <= 0) |
-            (ads_q["ROAS_Real"] < ads_q["ROAS_base"] * 0.70) |
-            (ads_q["CVR_Anuncio"] < ads_q["CVR_camp"] * 0.60)
-        )
-    ].copy()
-    bad["Acao_Recomendada"] = "PAUSAR ANÚNCIO"
-    bad["Motivo"] = "Consome investimento sem retorno proporcional"
-
-    # Revisar Fotos e Clips (CTR baixo)
-    fotos = ads_q[
-        (ads_q["Impressoes"] >= float(min_imp)) &
-        (
-            (ads_q["CTR"] < ads_q["CTR_camp"] * 0.70) |
-            (ads_q["CTR"] < float(ctr_min_abs))
-        )
-    ].copy()
-    fotos["Acao_Recomendada"] = "REVISAR FOTOS E CLIPS"
-    fotos["Motivo"] = "Baixa atratividade no feed"
-
-    # Otimizar palavras-chave (CTR ok, CVR ruim)
-    kw = ads_q[
-        (ads_q["Cliques"] >= float(min_clicks)) &
-        (ads_q["CTR"] >= float(ctr_min_abs)) &
-        (ads_q["CVR_Anuncio"] < ads_q["CVR_camp"] * 0.70)
-    ].copy()
-    kw["Acao_Recomendada"] = "OTIMIZAR PALAVRAS-CHAVE"
-    kw["Motivo"] = "Tráfego desalinhado, baixa conversão"
-
-    # Revisar oferta
-    oferta = ads_q[
-        (ads_q["Cliques"] >= float(min_clicks)) &
-        (ads_q["CTR"] >= float(ctr_min_abs)) &
-        (ads_q["CVR_Anuncio"] < ads_q["CVR_camp"] * 0.70) &
-        (ads_q["ROAS_Real"] < ads_q["ROAS_base"] * 0.85)
-    ].copy()
-    oferta["Acao_Recomendada"] = "REVISAR OFERTA"
-    oferta["Motivo"] = "Oferta pouco competitiva ou possível movimento de concorrência"
-
-    cols = ["Campanha", "ID", "Titulo", "Status", "Impressoes", "Cliques", "Investimento", "Receita", "Vendas",
-            "ROAS_Real", "ACOS_Real", "CTR", "CVR_Anuncio", "Acao_Recomendada", "Motivo"]
-
-    def _sel(dfx):
-        if dfx is None or dfx.empty:
-            return dfx
-        return dfx[[c for c in cols if c in dfx.columns]].copy()
-
-    return _sel(winners), _sel(bad), _sel(fotos), _sel(kw), _sel(oferta)
-
 
 
 def _coerce_campaign_numeric(df: pd.DataFrame) -> pd.DataFrame:
+    if df is None or df.empty:
+        return df
+
     cols_num = [
-        "Impressões","Cliques","Receita\n(Moeda local)","Investimento\n(Moeda local)",
-        "Vendas por publicidade\n(Diretas + Indiretas)","CVR\n(Conversion rate)","ROAS\n(Receitas / Investimento)",
-        "CVR\n(Conversion rate)","% de impressões perdidas por orçamento",
-        "% de impressões perdidas por classificação","Orçamento","ACOS Objetivo"
+        "Impressões",
+        "Cliques",
+        "Receita\n(Moeda local)",
+        "Investimento\n(Moeda local)",
+        "Vendas por publicidade\n(Diretas + Indiretas)",
+        "ROAS\n(Receitas / Investimento)",
+        "CVR\n(Conversion rate)",
+        "% de impressões perdidas por orçamento",
+        "% de impressões perdidas por classificação",
+        "Orçamento",
+        "ACOS Objetivo",
     ]
     for c in cols_num:
         if c in df.columns:
@@ -349,55 +257,20 @@ def _coerce_campaign_numeric(df: pd.DataFrame) -> pd.DataFrame:
 
 def load_campanhas_diario(campanhas_file) -> pd.DataFrame:
     camp = pd.read_excel(campanhas_file, sheet_name="Relatório de campanha", header=1)
+    camp = _standardize_cols_by_candidates(camp, _CAMPAIGN_COL_CANDIDATES)
+
     if "Desde" in camp.columns:
         camp["Desde"] = pd.to_datetime(camp["Desde"], errors="coerce")
+
     camp = _coerce_campaign_numeric(camp)
     return camp
 
 
 def load_campanhas_consolidado(campanhas_file) -> pd.DataFrame:
-    """
-    Lê o relatório de campanhas (consolidado).
-    O Mercado Livre costuma variar o nome da aba, então tentamos achar automaticamente.
-    """
-    xls = pd.ExcelFile(campanhas_file)
-    sheets = list(xls.sheet_names)
-    # candidatos mais comuns
-    candidates = [
-        "Relatório de campanha",
-        "Relatorio de campanha",
-        "Relatório de campanhas",
-        "Relatorio de campanhas",
-        "Campanhas",
-        "Campaign report",
-    ]
-    sheet = None
-    # 1) match exato (case-insensitive)
-    lower_map = {s.lower(): s for s in sheets}
-    for c in candidates:
-        if c.lower() in lower_map:
-            sheet = lower_map[c.lower()]
-            break
-    # 2) match por palavra-chave
-    if sheet is None:
-        for s in sheets:
-            sl = s.lower()
-            if "campanh" in sl and ("relat" in sl or "report" in sl):
-                sheet = s
-                break
-    # 3) fallback: primeira aba
-    if sheet is None and sheets:
-        sheet = sheets[0]
-    if sheet is None:
-        raise ValueError("Nenhuma aba encontrada no arquivo de campanhas.")
-    # header=1 é o padrão dos relatórios do ML, mas alguns vêm com header=0
-    try:
-        camp = pd.read_excel(xls, sheet_name=sheet, header=1)
-    except Exception:
-        camp = pd.read_excel(xls, sheet_name=sheet, header=0)
+    camp = pd.read_excel(campanhas_file, sheet_name="Relatório de campanha", header=1)
+    camp = _standardize_cols_by_candidates(camp, _CAMPAIGN_COL_CANDIDATES)
     camp = _coerce_campaign_numeric(camp)
     return camp
-
 
 
 def build_daily_from_diario(camp_diario: pd.DataFrame) -> pd.DataFrame:
@@ -808,13 +681,16 @@ def build_tables(
     enter_visitas_min: int = 50,
     enter_conv_min: float = 0.05,
     pause_invest_min: float = 100.0,
-    pause_cvr_max: float = 0.01,
-    ads_min_imp: int = 2000,
-    ads_min_clicks: int = 30,
-    ads_min_invest: float = 20.0,
-    ads_ctr_min_abs: float = 0.80,
+    pause_cvr_max: float = 0.01
 ):
-    camp_strat = add_strategy_fields(camp_agg)
+    # KPIs devem considerar TODAS as campanhas (ativas e inativas).
+    camp_agg_all = camp_agg.copy() if camp_agg is not None else camp_agg
+
+    # Tabelas de ação consideram apenas campanhas ATIVAS
+    camp_agg_active = camp_agg
+    if camp_agg_active is not None and not camp_agg_active.empty and "Status" in camp_agg_active.columns:
+        camp_agg_active = camp_agg_active[camp_agg_active["Status"].map(_is_active_status)].copy()
+    camp_strat = add_strategy_fields(camp_agg_active)
 
     pause = camp_strat[
         (camp_strat["Investimento"] > pause_invest_min) &
@@ -824,10 +700,15 @@ def build_tables(
     pause = pause.sort_values("Investimento", ascending=False)
 
     ads_ids = set(pat["ID"].dropna().astype(str).unique())
-    enter = org[
-        (org["Visitas"] >= enter_visitas_min) &
-        (org["Conv_Visitas_Vendas"] > enter_conv_min) &
-        (~org["ID"].astype(str).isin(ads_ids))
+    # Considerar apenas anúncios ATIVOS para recomendação de entrada em Ads
+    org_active = org
+    if org is not None and not org.empty and "Status" in org.columns:
+        org_active = org[org["Status"].map(_is_active_status)].copy()
+
+    enter = org_active[
+        (org_active["Visitas"] >= enter_visitas_min) &
+        (org_active["Conv_Visitas_Vendas"] > enter_conv_min) &
+        (~org_active["ID"].astype(str).isin(ads_ids))
     ].copy()
     enter["Codigo_MLB"] = "MLB" + enter["ID"].astype(str)
     enter["Ação"] = "INSERIR EM ADS"
@@ -846,9 +727,9 @@ def build_tables(
     if "Perdidas_Class" in acos.columns:
         acos = acos.sort_values(["Perdidas_Class","Receita"], ascending=[False, False])
 
-    invest_total = float(pd.to_numeric(camp_agg["Investimento"], errors="coerce").fillna(0).sum())
-    receita_total = float(pd.to_numeric(camp_agg["Receita"], errors="coerce").fillna(0).sum())
-    vendas_total = int(pd.to_numeric(camp_agg["Vendas"], errors="coerce").fillna(0).sum())
+    invest_total = float(pd.to_numeric(camp_agg_all["Investimento"], errors="coerce").fillna(0).sum())
+    receita_total = float(pd.to_numeric(camp_agg_all["Receita"], errors="coerce").fillna(0).sum())
+    vendas_total = int(pd.to_numeric(camp_agg_all["Vendas"], errors="coerce").fillna(0).sum())
     roas_total = (receita_total / invest_total) if invest_total else 0.0
 
     # TACOS = Investimento Ads / Faturamento total da conta.
@@ -857,7 +738,7 @@ def build_tables(
     tacos = (invest_total / faturamento_total) if faturamento_total else 0.0
 
     kpis = {
-        "Campanhas únicas": int(camp_agg["Nome"].nunique()),
+        "Campanhas únicas": int(camp_agg_all["Nome"].nunique()),
         "IDs patrocinados únicos": int(pat["ID"].nunique()),
         "Investimento Ads (R$)": invest_total,
         "Receita Ads (R$)": receita_total,
@@ -867,16 +748,7 @@ def build_tables(
         "Faturamento total (R$)": faturamento_total,
     }
 
-    ads_winners, ads_bad, ads_fotos, ads_kw, ads_oferta = build_ads_actions(
-        pat=pat,
-        camp_strat=camp_strat,
-        min_imp=int(ads_min_imp),
-        min_clicks=int(ads_min_clicks),
-        min_invest=float(ads_min_invest),
-        ctr_min_abs=float(ads_ctr_min_abs),
-    )
-
-    return kpis, pause, enter, scale, acos, camp_strat, ads_winners, ads_bad, ads_fotos, ads_kw, ads_oferta
+    return kpis, pause, enter, scale, acos, camp_strat
 
 
 def gerar_excel(kpis, camp_agg, pause, enter, scale, acos, camp_strat, daily=None) -> bytes:
