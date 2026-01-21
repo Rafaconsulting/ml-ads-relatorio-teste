@@ -245,6 +245,22 @@ def load_organico(organico_file) -> pd.DataFrame:
     org = org.rename(columns={k: v for k, v in rename_map.items() if k in org.columns})
 
     # remove linhas repetidas de cabecalho, se existirem
+
+    # Correção: campos de conversão no export do Mercado Livre normalmente já vêm em "%".
+    # Ex.: 2,22% pode ser lido como 2.22. Para o app formatar corretamente como percentual,
+    # convertemos para fração (0.0222) quando detectamos valores acima de 1.
+    for _c in ["Conv_Visitas_Vendas", "Conv_Visitas_Compradores"]:
+        if _c in org.columns:
+            s = pd.to_numeric(org[_c], errors="coerce")
+            # Se a maioria dos valores é > 1, consideramos que está em pontos percentuais
+            # e convertemos para fração.
+            if s.dropna().empty is False:
+                med = float(s.dropna().median()) if not s.dropna().empty else 0.0
+                if med > 1.0:
+                    org[_c] = s / 100.0
+                else:
+                    org[_c] = s
+
     if "ID" in org.columns:
         org = org[org["ID"].astype(str).str.strip().str.lower() != "id do anúncio"].copy()
 
@@ -1131,4 +1147,3 @@ def build_ads_panel(
 
     out = out.sort_values(["Status_Anuncio", "Investimento"], ascending=[True, False]).reset_index(drop=True)
     return out
-
