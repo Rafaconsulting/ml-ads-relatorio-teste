@@ -942,7 +942,7 @@ def compare_snapshots(df_current: pd.DataFrame, df_reference: pd.DataFrame) -> p
         
     comparison["Evolucao_Status"] = comparison.apply(check_status_improvement, axis=1)
     
-    return compariso
+    return comparison
 
 def build_ads_panel(
     pat: pd.DataFrame,
@@ -981,7 +981,7 @@ def build_ads_panel(
         cand = None
         for c in df.columns:
             ck = _norm_col_key(c)
-            if "campanha" in ck:
+            if ("campanha" in ck) or ("campaign" in ck) or ("campana" in ck):
                 cand = c
                 break
         df["Campanha"] = df[cand] if cand else pd.NA
