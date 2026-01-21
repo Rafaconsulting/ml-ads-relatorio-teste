@@ -855,8 +855,8 @@ def build_tables(
         camp_strat=camp_strat,
         ads_min_imp=int(kwargs.get("ads_min_imp", 500)),
         ads_min_clk=int(kwargs.get("ads_min_clk", 10)),
-        ads_ctr_min_abs=float(kwargs.get("ads_ctr_min_abs", 0.10)),
-        ads_cvr_min=float(kwargs.get("ads_cvr_min", 0.80)),
+        ads_ctr_min_abs=float(kwargs.get("ads_ctr_min_abs", 0.60)),
+        ads_cvr_min=float(kwargs.get("ads_cvr_min", 1.00)),
         ads_pause_invest_min=float(kwargs.get("ads_pause_invest_min", 20.0)),
     )
 
@@ -965,8 +965,8 @@ def build_ads_panel(
     camp_strat: pd.DataFrame | None = None,
     ads_min_imp: int = 500,
     ads_min_clk: int = 10,
-    ads_ctr_min_abs: float = 0.10,
-    ads_cvr_min: float = 0.80,
+    ads_ctr_min_abs: float = 0.60,
+    ads_cvr_min: float = 1.00,
     ads_pause_invest_min: float = 20.0,
     share_prejudicial_min: float = 0.25,
     roas_bad_mult: float = 0.70,
@@ -978,6 +978,14 @@ def build_ads_panel(
     - Anúncio vira unidade de diagnóstico e refinamento da ação.
     - Sem CPC como alavanca (não é controlável no ML).
     """
+
+    # Normalização de limiares: aceita valores em fração (0.022) ou em percentual (2.2)
+    # Internamente, CTR_pct e CVR_pct estão em percentual (0 a 100).
+    if 0 < ads_ctr_min_abs < 0.05:
+        ads_ctr_min_abs *= 100
+    if 0 < ads_cvr_min < 0.05:
+        ads_cvr_min *= 100
+
     if pat is None or pat.empty:
         return pd.DataFrame()
 
