@@ -245,22 +245,6 @@ def load_organico(organico_file) -> pd.DataFrame:
     org = org.rename(columns={k: v for k, v in rename_map.items() if k in org.columns})
 
     # remove linhas repetidas de cabecalho, se existirem
-
-    # Correção: campos de conversão no export do Mercado Livre normalmente já vêm em "%".
-    # Ex.: 2,22% pode ser lido como 2.22. Para o app formatar corretamente como percentual,
-    # convertemos para fração (0.0222) quando detectamos valores acima de 1.
-    for _c in ["Conv_Visitas_Vendas", "Conv_Visitas_Compradores"]:
-        if _c in org.columns:
-            s = pd.to_numeric(org[_c], errors="coerce")
-            # Se a maioria dos valores é > 1, consideramos que está em pontos percentuais
-            # e convertemos para fração.
-            if s.dropna().empty is False:
-                med = float(s.dropna().median()) if not s.dropna().empty else 0.0
-                if med > 1.0:
-                    org[_c] = s / 100.0
-                else:
-                    org[_c] = s
-
     if "ID" in org.columns:
         org = org[org["ID"].astype(str).str.strip().str.lower() != "id do anúncio"].copy()
 
@@ -269,7 +253,23 @@ def load_organico(organico_file) -> pd.DataFrame:
         if c in org.columns:
             org[c] = _coerce_series_numeric_ptbr(org[c])
 
-    if "ID" in org.columns:
+    
+    # Recalcula conversões de forma consistente usando as colunas-base.
+    # Mantemos em percentual (0 a 100), pois o app usa regra e exibição em %.
+    if "Visitas" in org.columns and "Qtd_Vendas" in org.columns:
+        v = pd.to_numeric(org["Visitas"], errors="coerce").fillna(0)
+        s = pd.to_numeric(org["Qtd_Vendas"], errors="coerce").fillna(0)
+        conv = (s / v.replace({0: pd.NA})) * 100
+        conv = conv.fillna(0).clip(lower=0, upper=100)
+        org["Conv_Visitas_Vendas"] = conv
+
+    if "Visitas" in org.columns and "Compradores" in org.columns:
+        v = pd.to_numeric(org["Visitas"], errors="coerce").fillna(0)
+        b = pd.to_numeric(org["Compradores"], errors="coerce").fillna(0)
+        convb = (b / v.replace({0: pd.NA})) * 100
+        convb = convb.fillna(0).clip(lower=0, upper=100)
+        org["Conv_Visitas_Compradores"] = convb
+if "ID" in org.columns:
         org["ID"] = org["ID"].astype(str).str.replace("MLB", "", regex=False).str.replace(r"\.0$", "", regex=True)
     return org
 
@@ -958,7 +958,7 @@ def compare_snapshots(df_current: pd.DataFrame, df_reference: pd.DataFrame) -> p
         
     comparison["Evolucao_Status"] = comparison.apply(check_status_improvement, axis=1)
     
-    return comparison
+    return compariso
 
 def build_ads_panel(
     pat: pd.DataFrame,
@@ -997,7 +997,7 @@ def build_ads_panel(
         cand = None
         for c in df.columns:
             ck = _norm_col_key(c)
-            if ("campanha" in ck) or ("campaign" in ck) or ("campana" in ck):
+            if "campanha" in ck:
                 cand = c
                 break
         df["Campanha"] = df[cand] if cand else pd.NA
@@ -1147,3 +1147,4 @@ def build_ads_panel(
 
     out = out.sort_values(["Status_Anuncio", "Investimento"], ascending=[True, False]).reset_index(drop=True)
     return out
+
