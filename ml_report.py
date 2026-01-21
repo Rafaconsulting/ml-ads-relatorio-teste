@@ -834,9 +834,9 @@ def build_tables(
         "TACOS": tacos,
         "Faturamento total (R$)": faturamento_total,
     }
-
     ads_panel = build_ads_panel(
         pat,
+        camp_strat=camp_strat,
         ads_min_imp=int(kwargs.get("ads_min_imp", 500)),
         ads_min_clk=int(kwargs.get("ads_min_clk", 10)),
         ads_ctr_min_abs=float(kwargs.get("ads_ctr_min_abs", 0.10)),
@@ -844,13 +844,22 @@ def build_tables(
         ads_pause_invest_min=float(kwargs.get("ads_pause_invest_min", 20.0)),
     )
 
-    ads_pause = pd.DataFrame()
-    ads_scale = pd.DataFrame()
-    if ads_panel is not None and not ads_panel.empty:
-        ads_pause = ads_panel[ads_panel["Acao_Anuncio"] == "PAUSAR/REVISAR"].copy()
-        ads_scale = ads_panel[ads_panel["Acao_Anuncio"] == "ESCALAR"].copy()
+    ads_pausar = pd.DataFrame()
+    ads_vencedores = pd.DataFrame()
+    ads_otim_fotos = pd.DataFrame()
+    ads_otim_keywords = pd.DataFrame()
+    ads_otim_oferta = pd.DataFrame()
 
-    return kpis, pause, enter, scale, acos, camp_strat, ads_panel, ads_pause, ads_scale
+    if ads_panel is not None and not ads_panel.empty:
+        if "Acao_Anuncio" in ads_panel.columns:
+            ads_pausar = ads_panel[ads_panel["Acao_Anuncio"] == "Pausar anúncio"].copy()
+            ads_otim_fotos = ads_panel[ads_panel["Acao_Anuncio"] == "Revisar Fotos e Clips"].copy()
+            ads_otim_keywords = ads_panel[ads_panel["Acao_Anuncio"] == "Otimizar Palavras-chave"].copy()
+            ads_otim_oferta = ads_panel[ads_panel["Acao_Anuncio"] == "Revisar Oferta"].copy()
+        if "Status_Anuncio" in ads_panel.columns:
+            ads_vencedores = ads_panel[ads_panel["Status_Anuncio"] == "Vencedor"].copy()
+
+    return kpis, pause, enter, scale, acos, camp_strat, ads_panel, ads_pausar, ads_vencedores, ads_otim_fotos, ads_otim_keywords, ads_otim_oferta
 
 
 def gerar_excel(kpis, camp_agg, pause, enter, scale, acos, camp_strat, daily=None) -> bytes:
@@ -937,14 +946,22 @@ def compare_snapshots(df_current: pd.DataFrame, df_reference: pd.DataFrame) -> p
 
 def build_ads_panel(
     pat: pd.DataFrame,
+    camp_strat: pd.DataFrame | None = None,
     ads_min_imp: int = 500,
     ads_min_clk: int = 10,
     ads_ctr_min_abs: float = 0.10,
     ads_cvr_min: float = 0.80,
     ads_pause_invest_min: float = 20.0,
-    roas_good: float = 3.0,
-    roas_bad: float = 1.0
+    share_prejudicial_min: float = 0.25,
+    roas_bad_mult: float = 0.70,
 ) -> pd.DataFrame:
+    """Painel tático por anúncio (patrocinados).
+
+    Ideia:
+    - Campanha continua sendo unidade de controle.
+    - Anúncio vira unidade de diagnóstico e refinamento da ação.
+    - Sem CPC como alavanca (não é controlável no ML).
+    """
     if pat is None or pat.empty:
         return pd.DataFrame()
 
@@ -959,22 +976,20 @@ def build_ads_panel(
     elif "Titulo" not in df.columns:
         df["Titulo"] = pd.NA
 
+    # camp
     if "Campanha" not in df.columns:
-        # tenta achar algo parecido
         cand = None
         for c in df.columns:
             ck = _norm_col_key(c)
             if "campanha" in ck:
                 cand = c
                 break
-        if cand:
-            df["Campanha"] = df[cand]
-        else:
-            df["Campanha"] = pd.NA
+        df["Campanha"] = df[cand] if cand else pd.NA
 
     if "Status" not in df.columns:
         df["Status"] = pd.NA
 
+    # agregação (tolerante a nomes com \n)
     agg_map = {
         "Impressões": "sum",
         "Cliques": "sum",
@@ -983,16 +998,10 @@ def build_ads_panel(
         "Vendas por publicidade\n(Diretas + Indiretas)": "sum",
     }
 
-    # Pandas named-aggregation via kwargs quebra com colunas que têm \n ou caracteres fora de identificador.
-    # Aqui usamos dict de agregação (coluna -> função), que é mais tolerante.
     agg_dict = {}
-
-    # campos descritivos (pega o primeiro valor)
     for c in ["Campanha", "Codigo_MLB", "Titulo", "Status"]:
         if c in df.columns:
             agg_dict[c] = "first"
-
-    # métricas (soma)
     for c, fn in agg_map.items():
         if c in df.columns:
             agg_dict[c] = fn
@@ -1008,45 +1017,118 @@ def build_ads_panel(
 
     for c in ["Impressoes", "Cliques", "Receita", "Investimento", "Vendas"]:
         if c not in out.columns:
-            out[c] = 0
+            out[c] = 0.0
+        out[c] = pd.to_numeric(out[c], errors="coerce").fillna(0.0)
 
+    # métricas por anúncio
     out["CTR_pct"] = out.apply(lambda r: (r["Cliques"] / r["Impressoes"] * 100) if r["Impressoes"] else 0.0, axis=1)
     out["CVR_pct"] = out.apply(lambda r: (r["Vendas"] / r["Cliques"] * 100) if r["Cliques"] else 0.0, axis=1)
     out["ROAS_Real"] = out.apply(lambda r: (r["Receita"] / r["Investimento"]) if r["Investimento"] else 0.0, axis=1)
     out["ACOS_Real_pct"] = out.apply(lambda r: (r["Investimento"] / r["Receita"] * 100) if r["Receita"] else 0.0, axis=1)
 
-    def _acao(r):
+    # métricas por campanha a partir do próprio patrocinado
+    camp_base = out.groupby("Campanha", as_index=False).agg(
+        Invest_Campanha=("Investimento", "sum"),
+        Receita_Campanha=("Receita", "sum"),
+        Cliques_Campanha=("Cliques", "sum"),
+        Vendas_Campanha=("Vendas", "sum"),
+    )
+    camp_base["ROAS_Campanha"] = camp_base.apply(
+        lambda r: (r["Receita_Campanha"] / r["Invest_Campanha"]) if r["Invest_Campanha"] else 0.0, axis=1
+    )
+    camp_base["CVR_Campanha_pct"] = camp_base.apply(
+        lambda r: (r["Vendas_Campanha"] / r["Cliques_Campanha"] * 100) if r["Cliques_Campanha"] else 0.0, axis=1
+    )
+
+    out = out.merge(camp_base, on="Campanha", how="left")
+    out["Pct_Invest_Campanha"] = out.apply(
+        lambda r: (r["Investimento"] / r["Invest_Campanha"]) if r.get("Invest_Campanha") else 0.0, axis=1
+    ) * 100.0
+
+    # puxa ROAS objetivo da campanha (se disponível)
+    out["ROAS_Objetivo_Campanha"] = pd.NA
+    out["Quadrante_Campanha"] = pd.NA
+    out["Acao_Campanha"] = pd.NA
+
+    if camp_strat is not None and not camp_strat.empty:
+        cols_need = [c for c in ["Nome", "ROAS_Objetivo", "Quadrante", "Acao_Recomendada"] if c in camp_strat.columns]
+        if "Nome" in cols_need:
+            camp_pick = camp_strat[cols_need].copy()
+            camp_pick = camp_pick.rename(columns={
+                "Nome": "Campanha",
+                "ROAS_Objetivo": "ROAS_Objetivo_Campanha",
+                "Quadrante": "Quadrante_Campanha",
+                "Acao_Recomendada": "Acao_Campanha",
+            })
+            out = out.merge(camp_pick, on="Campanha", how="left")
+
+    # fallback do objetivo: se não tem objetivo, usa o ROAS real da campanha como referência
+    def _roas_ref(r):
+        ro = r.get("ROAS_Objetivo_Campanha")
+        try:
+            if pd.notna(ro) and float(ro) > 0:
+                return float(ro)
+        except Exception:
+            pass
+        return float(r.get("ROAS_Campanha") or 0.0)
+
+    out["ROAS_Ref"] = out.apply(_roas_ref, axis=1)
+
+    def _classificar(r):
+        imp = float(r.get("Impressoes") or 0)
+        clk = float(r.get("Cliques") or 0)
         inv = float(r.get("Investimento") or 0)
         rec = float(r.get("Receita") or 0)
         roas = float(r.get("ROAS_Real") or 0)
-        imp = float(r.get("Impressoes") or 0)
-        clk = float(r.get("Cliques") or 0)
         ctr = float(r.get("CTR_pct") or 0)
         cvr = float(r.get("CVR_pct") or 0)
+        cvr_camp = float(r.get("CVR_Campanha_pct") or 0)
+        share = float(r.get("Pct_Invest_Campanha") or 0)
+        roas_ref = float(r.get("ROAS_Ref") or 0)
 
         if imp < ads_min_imp or clk < ads_min_clk:
-            return "MANTER", "BAIXA", "Pouco volume, coletar mais dados"
+            return "Neutro", "Manter", "BAIXA", "Pouco volume, coletar mais dados"
 
         if inv >= ads_pause_invest_min and rec <= 0:
-            return "PAUSAR/REVISAR", "ALTA", "Gasto sem retorno"
+            return "Prejudicial", "Pausar anúncio", "ALTA", "Gasto sem retorno"
 
-        if inv >= ads_pause_invest_min and roas < roas_bad:
-            return "PAUSAR/REVISAR", "ALTA", "ROAS muito baixo"
+        if inv >= ads_pause_invest_min and roas_ref > 0 and roas < (roas_ref * roas_bad_mult):
+            conf = "ALTA" if share >= (share_prejudicial_min * 100) else "MEDIA"
+            return "Prejudicial", "Pausar anúncio", conf, "ROAS abaixo do alvo da campanha"
 
         if ctr < ads_ctr_min_abs:
-            return "OTIMIZAR ANUNCIO", "MEDIA", "CTR baixo, revisar título, foto, preço e proposta"
+            return "Neutro", "Revisar Fotos e Clips", "MEDIA", "Baixa atratividade, revisar Fotos e Clips"
 
         if cvr < ads_cvr_min:
-            return "OTIMIZAR ANUNCIO", "MEDIA", "CVR baixo, revisar preço, frete, reputação e página"
+            if cvr_camp > 0 and cvr < (cvr_camp * 0.75):
+                if ctr < (ads_ctr_min_abs * 2):
+                    return "Neutro", "Otimizar Palavras-chave", "MEDIA", "Tráfego desalinhado, otimizar palavras-chave"
+                return "Neutro", "Revisar Oferta", "MEDIA", "Oferta pouco competitiva ou possível movimento de concorrência"
+            return "Neutro", "Manter", "MEDIA", "Conversão baixa no contexto da campanha, monitorar"
 
-        if roas >= roas_good:
-            return "ESCALAR", "ALTA", "ROAS alto e consistente"
+        if roas_ref > 0 and roas >= roas_ref and cvr >= max(ads_cvr_min, cvr_camp):
+            return "Vencedor", "Manter", "ALTA", "Acima do alvo da campanha, preservar"
 
-        return "MANTER", "MEDIA", "Dentro do esperado, monitorar"
+        return "Neutro", "Manter", "MEDIA", "Dentro do esperado, monitorar"
 
-    recs = out.apply(lambda r: pd.Series(_acao(r), index=["Acao_Anuncio", "Confianca_Anuncio", "Motivo_Anuncio"]), axis=1)
-    out = pd.concat([out, recs], axis=1)
+    tmp = out.apply(lambda r: pd.Series(_classificar(r), index=["Status_Anuncio", "Acao_Anuncio", "Confianca_Anuncio", "Motivo_Anuncio"]), axis=1)
+    out = pd.concat([out, tmp], axis=1)
 
-    out = out.sort_values(["Acao_Anuncio", "Receita"], ascending=[True, False])
+    def _acao_cruzada(r):
+        quad = str(r.get("Quadrante_Campanha") or "")
+        status = str(r.get("Status_Anuncio") or "")
+        acao = str(r.get("Acao_Anuncio") or "")
+
+        if ("ESCALA" in quad) and (status == "Prejudicial" or acao == "Pausar anúncio"):
+            return "Pausar anúncio, preservar campanha para escala"
+
+        if (("HEMORRAGIA" in quad) or ("PAUSAR" in quad)) and (status == "Vencedor"):
+            return "Preservar vencedor, revisar fracos antes de pausar campanha"
+
+        return ""
+
+    out["Refino_Campanha"] = out.apply(_acao_cruzada, axis=1)
+
+    out = out.sort_values(["Status_Anuncio", "Investimento"], ascending=[True, False]).reset_index(drop=True)
     return out
 
