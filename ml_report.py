@@ -982,15 +982,22 @@ def build_ads_panel(
         "Investimento\n(Moeda local)": "sum",
         "Vendas por publicidade\n(Diretas + Indiretas)": "sum",
     }
-    real_agg = {k: v for k, v in agg_map.items() if k in df.columns}
 
-    out = df.groupby(["ID"], as_index=False).agg(
-        Campanha=("Campanha", "first"),
-        Codigo_MLB=("Codigo_MLB", "first"),
-        Titulo=("Titulo", "first"),
-        Status=("Status", "first"),
-        **real_agg
-    )
+    # Pandas named-aggregation via kwargs quebra com colunas que têm \n ou caracteres fora de identificador.
+    # Aqui usamos dict de agregação (coluna -> função), que é mais tolerante.
+    agg_dict = {}
+
+    # campos descritivos (pega o primeiro valor)
+    for c in ["Campanha", "Codigo_MLB", "Titulo", "Status"]:
+        if c in df.columns:
+            agg_dict[c] = "first"
+
+    # métricas (soma)
+    for c, fn in agg_map.items():
+        if c in df.columns:
+            agg_dict[c] = fn
+
+    out = df.groupby(["ID"], as_index=False).agg(agg_dict)
 
     out = out.rename(columns={
         "Impressões": "Impressoes",
