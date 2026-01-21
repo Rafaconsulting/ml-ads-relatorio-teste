@@ -113,8 +113,38 @@ def load_organico(organico_file) -> pd.DataFrame:
 
 
 def load_patrocinados(patrocinados_file) -> pd.DataFrame:
-    pat = pd.read_excel(patrocinados_file, sheet_name="Relatório Anúncios patrocinados", header=1)
+    """Lê o relatório de anúncios patrocinados (Ads). Nome da aba pode variar."""
+    xls = pd.ExcelFile(patrocinados_file)
+    sheets = list(xls.sheet_names)
+    candidates = ["Relatório Anúncios patrocinados", "Relatorio Anuncios patrocinados", "Anúncios patrocinados", "Anuncios patrocinados"]
+    sheet = None
+    lower_map = {s.lower(): s for s in sheets}
+    for c in candidates:
+        if c.lower() in lower_map:
+            sheet = lower_map[c.lower()]
+            break
+    if sheet is None:
+        for s in sheets:
+            sl = s.lower()
+            if "patrocin" in sl and "anún" in sl or ("patrocin" in sl and "anun" in sl):
+                sheet = s
+                break
+    if sheet is None and sheets:
+        sheet = sheets[0]
+    if sheet is None:
+        raise ValueError("Nenhuma aba encontrada no relatório de anúncios patrocinados.")
+    try:
+        pat = pd.read_excel(xls, sheet_name=sheet, header=1)
+    except Exception:
+        pat = pd.read_excel(xls, sheet_name=sheet, header=0)
     pat["ID"] = pat["Código do anúncio"].astype(str).str.replace("MLB", "", regex=False).str.replace(r"\.0$", "", regex=True)
+
+    for c in ["Impressões","Cliques","Receita\n(Moeda local)","Investimento\n(Moeda local)",
+              "Vendas por publicidade\n(Diretas + Indiretas)","CVR\n(Conversion rate)"]:
+        if c in pat.columns:
+            pat[c] = _coerce_series_numeric_ptbr(pat[c])
+    return pat
+
 
     for c in ["Impressões","Cliques","Receita\n(Moeda local)","Investimento\n(Moeda local)",
               "Vendas por publicidade\n(Diretas + Indiretas)","CVR\n(Conversion rate)"]:
@@ -326,9 +356,48 @@ def load_campanhas_diario(campanhas_file) -> pd.DataFrame:
 
 
 def load_campanhas_consolidado(campanhas_file) -> pd.DataFrame:
-    camp = pd.read_excel(campanhas_file, sheet_name="Relatório de campanha", header=1)
+    """
+    Lê o relatório de campanhas (consolidado).
+    O Mercado Livre costuma variar o nome da aba, então tentamos achar automaticamente.
+    """
+    xls = pd.ExcelFile(campanhas_file)
+    sheets = list(xls.sheet_names)
+    # candidatos mais comuns
+    candidates = [
+        "Relatório de campanha",
+        "Relatorio de campanha",
+        "Relatório de campanhas",
+        "Relatorio de campanhas",
+        "Campanhas",
+        "Campaign report",
+    ]
+    sheet = None
+    # 1) match exato (case-insensitive)
+    lower_map = {s.lower(): s for s in sheets}
+    for c in candidates:
+        if c.lower() in lower_map:
+            sheet = lower_map[c.lower()]
+            break
+    # 2) match por palavra-chave
+    if sheet is None:
+        for s in sheets:
+            sl = s.lower()
+            if "campanh" in sl and ("relat" in sl or "report" in sl):
+                sheet = s
+                break
+    # 3) fallback: primeira aba
+    if sheet is None and sheets:
+        sheet = sheets[0]
+    if sheet is None:
+        raise ValueError("Nenhuma aba encontrada no arquivo de campanhas.")
+    # header=1 é o padrão dos relatórios do ML, mas alguns vêm com header=0
+    try:
+        camp = pd.read_excel(xls, sheet_name=sheet, header=1)
+    except Exception:
+        camp = pd.read_excel(xls, sheet_name=sheet, header=0)
     camp = _coerce_campaign_numeric(camp)
     return camp
+
 
 
 def build_daily_from_diario(camp_diario: pd.DataFrame) -> pd.DataFrame:
