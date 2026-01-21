@@ -100,6 +100,55 @@ _CAMPAIGN_COL_CANDIDATES = {
     ],
     "Desde": ["Desde", "Data", "Date"],
 }
+def _pick_campaign_sheet(excel_file, preferred_name: str = "Relatório de campanha") -> str:
+    """
+    O export do Mercado Livre pode variar o nome da aba.
+    Esta função tenta achar automaticamente a aba correta.
+    """
+    try:
+        xls = pd.ExcelFile(excel_file)
+    except Exception:
+        # se já veio como ExcelFile
+        xls = excel_file
+
+    sheet_names = list(getattr(xls, "sheet_names", []) or [])
+    if not sheet_names:
+        return preferred_name
+
+    # 1) match exato se existir
+    if preferred_name in sheet_names:
+        return preferred_name
+
+    def norm(s: str) -> str:
+        s = "" if s is None else str(s)
+        s = s.strip().lower()
+        s = unicodedata.normalize("NFKD", s)
+        s = "".join(ch for ch in s if not unicodedata.combining(ch))
+        s = s.replace("\n", " ").replace("\r", " ")
+        s = re.sub(r"\s+", " ", s)
+        return s
+
+    # 2) match forte: contém "relatorio" e "campanha"
+    for sh in sheet_names:
+        ns = norm(sh)
+        if "relatorio" in ns and "campanha" in ns:
+            return sh
+
+    # 3) match alternativo: contém "campaign"
+    for sh in sheet_names:
+        ns = norm(sh)
+        if "campaign" in ns:
+            return sh
+
+    # 4) match por palavra-chave "campanha"
+    for sh in sheet_names:
+        ns = norm(sh)
+        if "campanha" in ns:
+            return sh
+
+    # 5) fallback: primeira aba
+    return sheet_names[0]
+
 
 def _is_active_status(val) -> bool:
     """Retorna True para status 'Ativa/Ativo/Active' (ignorando caixa e acentos)."""
@@ -256,7 +305,7 @@ def _coerce_campaign_numeric(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def load_campanhas_diario(campanhas_file) -> pd.DataFrame:
-    camp = pd.read_excel(campanhas_file, sheet_name="Relatório de campanha", header=1)
+    camp = pd.read_excel(campanhas_file, sheet_name=_pick_campaign_sheet(campanhas_file), header=1)
     camp = _standardize_cols_by_candidates(camp, _CAMPAIGN_COL_CANDIDATES)
 
     if "Desde" in camp.columns:
@@ -267,7 +316,7 @@ def load_campanhas_diario(campanhas_file) -> pd.DataFrame:
 
 
 def load_campanhas_consolidado(campanhas_file) -> pd.DataFrame:
-    camp = pd.read_excel(campanhas_file, sheet_name="Relatório de campanha", header=1)
+    camp = pd.read_excel(campanhas_file, sheet_name=_pick_campaign_sheet(campanhas_file), header=1)
     camp = _standardize_cols_by_candidates(camp, _CAMPAIGN_COL_CANDIDATES)
     camp = _coerce_campaign_numeric(camp)
     return camp
