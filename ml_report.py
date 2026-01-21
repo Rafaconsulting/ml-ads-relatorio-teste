@@ -285,24 +285,16 @@ def load_patrocinados(patrocinados_file) -> pd.DataFrame:
     cols_num = [
         "Impressões",
         "Cliques",
-        "CPC 
-(Custo por clique)",
-        "CTR
-(Click Through Rate)",
-        "CVR
-(Conversion rate)",
-        "Receita
-(Moeda local)",
-        "Investimento
-(Moeda local)",
-        "ACOS
- (Investimento / Receitas)",
-        "ROAS
-(Receitas / Investimento)",
+        "CPC \n(Custo por clique)",
+        "CTR\n(Click Through Rate)",
+        "CVR\n(Conversion rate)",
+        "Receita\n(Moeda local)",
+        "Investimento\n(Moeda local)",
+        "ACOS\n (Investimento / Receitas)",
+        "ROAS\n(Receitas / Investimento)",
         "Vendas diretas",
         "Vendas indiretas",
-        "Vendas por publicidade
-(Diretas + Indiretas)",
+        "Vendas por publicidade\n(Diretas + Indiretas)",
     ]
     for c in cols_num:
         if c in pat.columns:
@@ -1051,4 +1043,3 @@ def build_ads_panel(
     out = out.sort_values(["Acao_Anuncio", "Receita"], ascending=[True, False])
     return out
 
-n
