@@ -569,8 +569,9 @@ def format_table_br(df: pd.DataFrame) -> pd.DataFrame:
             df_fmt[col] = serie_num.map(fmt_money_br)
 
         elif _is_percent_col(col):
-            # Percentuais (Conv_Visitas_Vendas, CVR, Perdidas etc) já estão em pontos percentuais
-            # (ex: 1.19 significa 1,19%). Não aplicar auto-escala por heurística.
+            vmax = serie_num.max(skipna=True)
+            if pd.notna(vmax) and vmax <= 2:
+                serie_num = serie_num * 100
             df_fmt[col] = serie_num.map(fmt_percent_br)
 
         elif _is_count_col(col):
@@ -675,6 +676,20 @@ def main():
         campanhas_file = st.file_uploader("Relatorio de Campanha (Excel)", type=["xlsx"])
         
         st.divider()
+        st.subheader("Anúncios (Ads) - visão tática")
+        usar_ads_anuncio = st.checkbox("Ativar análise por anúncio", value=True)
+        if usar_ads_anuncio:
+            c1, c2, c3, c4 = st.columns(4)
+            with c1:
+                ads_min_imp = st.number_input("Ads: mín impressões", min_value=0, value=2000, step=500)
+            with c2:
+                ads_min_clicks = st.number_input("Ads: mín cliques", min_value=0, value=30, step=10)
+            with c3:
+                ads_min_invest = st.number_input("Ads: mín investimento (R$)", min_value=0.0, value=20.0, step=10.0, format="%.2f")
+            with c4:
+                ads_ctr_min_abs = st.number_input("Ads: CTR mín (%)", min_value=0.0, value=0.80, step=0.10, format="%.2f")
+        
+        st.divider()
         st.subheader("Comparativo (Opcional)")
         snapshot_file = st.file_uploader("Snapshot de Referencia (Excel)", type=["xlsx"], help="Arquivo gerado ha 15 dias para comparar evolucao")
         st.divider()
@@ -740,7 +755,7 @@ def main():
         camp_raw = ml.load_campanhas_consolidado(campanhas_file)
         camp_agg = ml.build_campaign_agg(camp_raw, modo="consolidado")
 
-        kpis, pause, enter, scale, acos, camp_strat = ml.build_tables(
+        res = ml.build_tables(
             org=org,
             camp_agg=camp_agg,
             pat=pat,
@@ -748,7 +763,27 @@ def main():
             enter_conv_min=float(enter_conv_min),
             pause_invest_min=float(pause_invest_min),
             pause_cvr_max=float(pause_cvr_max),
+            ads_min_imp=int(ads_min_imp) if ('usar_ads_anuncio' in locals() and usar_ads_anuncio) else 2000,
+            ads_min_clicks=int(ads_min_clicks) if ('usar_ads_anuncio' in locals() and usar_ads_anuncio) else 30,
+            ads_min_invest=float(ads_min_invest) if ('usar_ads_anuncio' in locals() and usar_ads_anuncio) else 20.0,
+            ads_ctr_min_abs=float(ads_ctr_min_abs) if ('usar_ads_anuncio' in locals() and usar_ads_anuncio) else 0.80,
         )
+
+        # Compatível com versões antigas
+        if isinstance(res, tuple) and len(res) >= 6:
+            kpis, pause, enter, scale, acos, camp_strat = res[:6]
+        else:
+            kpis, pause, enter, scale, acos, camp_strat = res
+
+        ads_tables = None
+        if isinstance(res, tuple) and len(res) == 11:
+            ads_tables = {
+                'winners': res[6],
+                'bad': res[7],
+                'fotos': res[8],
+                'kw': res[9],
+                'oferta': res[10],
+            }
 
         st.success("Relatório gerado com sucesso.")
         # -------------------------
@@ -881,7 +916,36 @@ def main():
         st.dataframe(scale_fmt, use_container_width=True)
     with c4:
         st.subheader("⬇️ Baixar ROAS objetivo")
+        
         st.dataframe(acos_fmt, use_container_width=True)
+
+    # -------------------------
+    # Ads por Anúncio (Visão Tática)
+    # -------------------------
+    if ("usar_ads_anuncio" in locals() and usar_ads_anuncio) and ads_tables is not None:
+        st.divider()
+        st.header("🎯 Ads por Anúncio (Visão Tática)")
+
+        def _show_ads(title, df_ads):
+            st.subheader(title)
+            if df_ads is None or df_ads.empty:
+                st.write("Sem itens nesta seção.")
+                return
+            st.dataframe(format_table_br(df_ads), use_container_width=True)
+
+        colA, colB = st.columns(2)
+        with colA:
+            _show_ads("✅ Anúncios vencedores (manter)", ads_tables["winners"])
+        with colB:
+            _show_ads("🛑 Pausar anúncio (prejudicial)", ads_tables["bad"])
+
+        colC, colD = st.columns(2)
+        with colC:
+            _show_ads("🖼️ Revisar Fotos e Clips", ads_tables["fotos"])
+        with colD:
+            _show_ads("🔎 Otimizar Palavras-chave", ads_tables["kw"])
+
+        _show_ads("💲 Revisar Oferta", ads_tables["oferta"])
 
     # -------------------------
     # Visão de Estoque (opcional)
