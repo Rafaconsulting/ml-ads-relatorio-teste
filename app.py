@@ -346,6 +346,9 @@ def _is_money_col(col_name: str) -> bool:
         "impacto estimado",
         "faturamento",
         "vendas (r$)",
+        "invest",
+        "invest_campanha",
+        "receita_campanha",
     ]
     return any(k in c for k in money_keys)
 
@@ -403,7 +406,11 @@ _PERCENT_COLS = {
 
 def _is_percent_col(col_name: str) -> bool:
     c = str(col_name).strip().lower().replace("__", "_")
-    return c in _PERCENT_COLS
+    if c in _PERCENT_COLS:
+        return True
+    # padrões comuns do app (ex: ctr_pct, cvr_campanha_pct, pct_invest_campanha)
+    return c.endswith("_pct") or c.startswith("pct_") or ("_pct_" in c)
+
 
 
 def _is_count_col(col_name: str) -> bool:
@@ -656,13 +663,15 @@ def render_treemap_chart(df):
     st.plotly_chart(fig, use_container_width=True)
 
 def main():
+    st.set_page_config(page_title="Mercado Livre Ads", layout="wide", initial_sidebar_state="expanded")
+
     # Carregar CSS customizado
     try:
         with open(".streamlit/style.css") as f:
             st.markdown(f"<style>{f.read()}</style>", unsafe_allow_html=True)
     except FileNotFoundError:
         st.warning("Arquivo de estilo não encontrado. O dashboard será exibido com o tema padrão.")
-    st.set_page_config(page_title="Mercado Livre Ads", layout="wide", initial_sidebar_state="expanded")
+
     st.title("📊 Mercado Livre Ads - Dashboard e Relatório")
 
     with st.sidebar:
@@ -721,6 +730,18 @@ def main():
         enter_conv_min = enter_conv_min_pct
         pause_cvr_max = pause_cvr_max_pct
 
+
+        st.divider()
+        st.subheader("Regras por anúncio (Ads)")
+
+        with st.expander("Ajustar regras de anúncio", expanded=False):
+            ads_min_imp = st.number_input("Ads: impressões mín", min_value=0, value=500, step=100)
+            ads_min_clk = st.number_input("Ads: cliques mín", min_value=0, value=10, step=5)
+            ads_ctr_min_abs = st.number_input("Ads: CTR mín (%)", min_value=0.0, value=0.10, step=0.05, format="%.2f")
+            ads_cvr_min = st.number_input("Ads: CVR mín (%)", min_value=0.0, value=0.80, step=0.10, format="%.2f")
+            ads_pause_invest_min = st.number_input("Ads: investimento mín p/ pausar (R$)", min_value=0.0, value=20.0, step=10.0, format="%.2f")
+
+        # CTR e CVR acima são em pontos percentuais (ex.: 0,80 = 0.80%)
         st.divider()
         executar = st.button("Gerar relatório", use_container_width=True)
 
