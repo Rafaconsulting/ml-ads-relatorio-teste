@@ -3,14 +3,6 @@ from io import BytesIO
 import unicodedata
 import re
 
-
-def _seek0(f):
-    try:
-        if hasattr(f, "seek"):
-            f.seek(0)
-    except Exception:
-        pass
-
 EMOJI_GREEN = '🟢'   # green circle
 EMOJI_YELLOW = '🟡'  # yellow circle
 EMOJI_BLUE = '🔵'    # blue circle
@@ -19,6 +11,43 @@ EMOJI_RED = '🔴'     # red circle
 
 
 
+
+
+def _safe_seek(x, pos=0):
+    try:
+        x.seek(pos)
+    except Exception:
+        pass
+
+
+def _pick_sheet(excel_file, preferred_names=None, must_have_terms=None):
+    preferred_names = preferred_names or []
+    must_have_terms = must_have_terms or []
+
+    _safe_seek(excel_file, 0)
+    xls = pd.ExcelFile(excel_file)
+    sheets = list(xls.sheet_names)
+
+    # match direto por nome preferido
+    for p in preferred_names:
+        if p in sheets:
+            return p
+
+    # match por termos (normalizado)
+    sheets_norm = {s: _norm_col_key(s) for s in sheets}
+    terms = [_norm_col_key(t) for t in must_have_terms]
+
+    for s, sn in sheets_norm.items():
+        ok = True
+        for t in terms:
+            if t and t not in sn:
+                ok = False
+                break
+        if ok:
+            return s
+
+    # fallback
+    return sheets[0] if sheets else None
 
 def _norm_col_key(s: str) -> str:
     s = "" if s is None else str(s)
@@ -108,57 +137,6 @@ _CAMPAIGN_COL_CANDIDATES = {
     ],
     "Desde": ["Desde", "Data", "Date"],
 }
-def _pick_campaign_sheet(excel_file, preferred_name: str = "Relatório de campanha") -> str:
-    """
-    O export do Mercado Livre pode variar o nome da aba.
-    Esta função tenta achar automaticamente a aba correta.
-    """
-    _seek0(excel_file)
-    try:
-        xls = pd.ExcelFile(excel_file)
-    except Exception:
-        # se já veio como ExcelFile
-        xls = excel_file
-
-    sheet_names = list(getattr(xls, "sheet_names", []) or [])
-    _seek0(excel_file)
-    if not sheet_names:
-        return preferred_name
-
-    # 1) match exato se existir
-    if preferred_name in sheet_names:
-        return preferred_name
-
-    def norm(s: str) -> str:
-        s = "" if s is None else str(s)
-        s = s.strip().lower()
-        s = unicodedata.normalize("NFKD", s)
-        s = "".join(ch for ch in s if not unicodedata.combining(ch))
-        s = s.replace("\n", " ").replace("\r", " ")
-        s = re.sub(r"\s+", " ", s)
-        return s
-
-    # 2) match forte: contém "relatorio" e "campanha"
-    for sh in sheet_names:
-        ns = norm(sh)
-        if "relatorio" in ns and "campanha" in ns:
-            return sh
-
-    # 3) match alternativo: contém "campaign"
-    for sh in sheet_names:
-        ns = norm(sh)
-        if "campaign" in ns:
-            return sh
-
-    # 4) match por palavra-chave "campanha"
-    for sh in sheet_names:
-        ns = norm(sh)
-        if "campanha" in ns:
-            return sh
-
-    # 5) fallback: primeira aba
-    return sheet_names[0]
-
 
 def _is_active_status(val) -> bool:
     """Retorna True para status 'Ativa/Ativo/Active' (ignorando caixa e acentos)."""
@@ -281,13 +259,55 @@ def load_organico(organico_file) -> pd.DataFrame:
 
 
 def load_patrocinados(patrocinados_file) -> pd.DataFrame:
-    pat = pd.read_excel(patrocinados_file, sheet_name="Relatório Anúncios patrocinados", header=1)
-    pat["ID"] = pat["Código do anúncio"].astype(str).str.replace("MLB", "", regex=False).str.replace(r"\.0$", "", regex=True)
+    _safe_seek(patrocinados_file, 0)
+    sheet = _pick_sheet(
+        patrocinados_file,
+        preferred_names=["Relatório Anúncios patrocinados", "Relatorio Anuncios patrocinados", "Relatório de anúncios patrocinados", "Relatorio de anuncios patrocinados"],
+        must_have_terms=["relatorio", "anuncio"],
+    )
+    _safe_seek(patrocinados_file, 0)
+    pat = pd.read_excel(patrocinados_file, sheet_name=sheet, header=1)
 
-    for c in ["Impressões","Cliques","Receita\n(Moeda local)","Investimento\n(Moeda local)",
-              "Vendas por publicidade\n(Diretas + Indiretas)"]:
+    if "Código do anúncio" in pat.columns:
+        pat["ID"] = pat["Código do anúncio"].astype(str).str.replace("MLB", "", regex=False).str.replace(r"\.0$", "", regex=True)
+    else:
+        # fallback: tenta achar alguma coluna com "codigo" e "anuncio"
+        cand = None
+        for c in pat.columns:
+            ck = _norm_col_key(c)
+            if "codigo" in ck and "anuncio" in ck:
+                cand = c
+                break
+        if cand is None:
+            cand = pat.columns[0]
+        pat["ID"] = pat[cand].astype(str).str.replace("MLB", "", regex=False).str.replace(r"\.0$", "", regex=True)
+
+    cols_num = [
+        "Impressões",
+        "Cliques",
+        "CPC 
+(Custo por clique)",
+        "CTR
+(Click Through Rate)",
+        "CVR
+(Conversion rate)",
+        "Receita
+(Moeda local)",
+        "Investimento
+(Moeda local)",
+        "ACOS
+ (Investimento / Receitas)",
+        "ROAS
+(Receitas / Investimento)",
+        "Vendas diretas",
+        "Vendas indiretas",
+        "Vendas por publicidade
+(Diretas + Indiretas)",
+    ]
+    for c in cols_num:
         if c in pat.columns:
             pat[c] = _coerce_series_numeric_ptbr(pat[c])
+
     return pat
 
 
@@ -315,8 +335,15 @@ def _coerce_campaign_numeric(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def load_campanhas_diario(campanhas_file) -> pd.DataFrame:
-    _seek0(campanhas_file)
-    camp = pd.read_excel(campanhas_file, sheet_name=_pick_campaign_sheet(campanhas_file), header=1)
+    _safe_seek(campanhas_file, 0)
+    sheet = _pick_sheet(
+        campanhas_file,
+        preferred_names=["Relatório de campanha", "Relatorio de campanha"],
+        must_have_terms=["relatorio", "campanha"],
+    )
+    _safe_seek(campanhas_file, 0)
+    camp = pd.read_excel(campanhas_file, sheet_name=sheet, header=1)
+
     camp = _standardize_cols_by_candidates(camp, _CAMPAIGN_COL_CANDIDATES)
 
     if "Desde" in camp.columns:
@@ -327,8 +354,14 @@ def load_campanhas_diario(campanhas_file) -> pd.DataFrame:
 
 
 def load_campanhas_consolidado(campanhas_file) -> pd.DataFrame:
-    _seek0(campanhas_file)
-    camp = pd.read_excel(campanhas_file, sheet_name=_pick_campaign_sheet(campanhas_file), header=1)
+    _safe_seek(campanhas_file, 0)
+    sheet = _pick_sheet(
+        campanhas_file,
+        preferred_names=["Relatório de campanha", "Relatorio de campanha"],
+        must_have_terms=["relatorio", "campanha"],
+    )
+    _safe_seek(campanhas_file, 0)
+    camp = pd.read_excel(campanhas_file, sheet_name=sheet, header=1)
     camp = _standardize_cols_by_candidates(camp, _CAMPAIGN_COL_CANDIDATES)
     camp = _coerce_campaign_numeric(camp)
     return camp
@@ -742,7 +775,8 @@ def build_tables(
     enter_visitas_min: int = 50,
     enter_conv_min: float = 0.05,
     pause_invest_min: float = 100.0,
-    pause_cvr_max: float = 0.01
+    pause_cvr_max: float = 0.01,
+    **kwargs
 ):
     # KPIs devem considerar TODAS as campanhas (ativas e inativas).
     camp_agg_all = camp_agg.copy() if camp_agg is not None else camp_agg
@@ -809,7 +843,22 @@ def build_tables(
         "Faturamento total (R$)": faturamento_total,
     }
 
-    return kpis, pause, enter, scale, acos, camp_strat
+    ads_panel = build_ads_panel(
+        pat,
+        ads_min_imp=int(kwargs.get("ads_min_imp", 500)),
+        ads_min_clk=int(kwargs.get("ads_min_clk", 10)),
+        ads_ctr_min_abs=float(kwargs.get("ads_ctr_min_abs", 0.10)),
+        ads_cvr_min=float(kwargs.get("ads_cvr_min", 0.80)),
+        ads_pause_invest_min=float(kwargs.get("ads_pause_invest_min", 20.0)),
+    )
+
+    ads_pause = pd.DataFrame()
+    ads_scale = pd.DataFrame()
+    if ads_panel is not None and not ads_panel.empty:
+        ads_pause = ads_panel[ads_panel["Acao_Anuncio"] == "PAUSAR/REVISAR"].copy()
+        ads_scale = ads_panel[ads_panel["Acao_Anuncio"] == "ESCALAR"].copy()
+
+    return kpis, pause, enter, scale, acos, camp_strat, ads_panel, ads_pause, ads_scale
 
 
 def gerar_excel(kpis, camp_agg, pause, enter, scale, acos, camp_strat, daily=None) -> bytes:
@@ -892,4 +941,114 @@ def compare_snapshots(df_current: pd.DataFrame, df_reference: pd.DataFrame) -> p
         
     comparison["Evolucao_Status"] = comparison.apply(check_status_improvement, axis=1)
     
-    return comparison
+    return compariso
+
+def build_ads_panel(
+    pat: pd.DataFrame,
+    ads_min_imp: int = 500,
+    ads_min_clk: int = 10,
+    ads_ctr_min_abs: float = 0.10,
+    ads_cvr_min: float = 0.80,
+    ads_pause_invest_min: float = 20.0,
+    roas_good: float = 3.0,
+    roas_bad: float = 1.0
+) -> pd.DataFrame:
+    if pat is None or pat.empty:
+        return pd.DataFrame()
+
+    df = pat.copy()
+
+    # cria Codigo_MLB e Titulo se existirem colunas conhecidas
+    if "Codigo_MLB" not in df.columns:
+        df["Codigo_MLB"] = "MLB" + df["ID"].astype(str)
+
+    if "Título do anúncio patrocinado" in df.columns and "Titulo" not in df.columns:
+        df["Titulo"] = df["Título do anúncio patrocinado"]
+    elif "Titulo" not in df.columns:
+        df["Titulo"] = pd.NA
+
+    if "Campanha" not in df.columns:
+        # tenta achar algo parecido
+        cand = None
+        for c in df.columns:
+            ck = _norm_col_key(c)
+            if "campanha" in ck:
+                cand = c
+                break
+        if cand:
+            df["Campanha"] = df[cand]
+        else:
+            df["Campanha"] = pd.NA
+
+    if "Status" not in df.columns:
+        df["Status"] = pd.NA
+
+    agg_map = {
+        "Impressões": "sum",
+        "Cliques": "sum",
+        "Receita\n(Moeda local)": "sum",
+        "Investimento\n(Moeda local)": "sum",
+        "Vendas por publicidade\n(Diretas + Indiretas)": "sum",
+    }
+    real_agg = {k: v for k, v in agg_map.items() if k in df.columns}
+
+    out = df.groupby(["ID"], as_index=False).agg(
+        Campanha=("Campanha", "first"),
+        Codigo_MLB=("Codigo_MLB", "first"),
+        Titulo=("Titulo", "first"),
+        Status=("Status", "first"),
+        **real_agg
+    )
+
+    out = out.rename(columns={
+        "Impressões": "Impressoes",
+        "Receita\n(Moeda local)": "Receita",
+        "Investimento\n(Moeda local)": "Investimento",
+        "Vendas por publicidade\n(Diretas + Indiretas)": "Vendas",
+    })
+
+    for c in ["Impressoes", "Cliques", "Receita", "Investimento", "Vendas"]:
+        if c not in out.columns:
+            out[c] = 0
+
+    out["CTR_pct"] = out.apply(lambda r: (r["Cliques"] / r["Impressoes"] * 100) if r["Impressoes"] else 0.0, axis=1)
+    out["CVR_pct"] = out.apply(lambda r: (r["Vendas"] / r["Cliques"] * 100) if r["Cliques"] else 0.0, axis=1)
+    out["ROAS_Real"] = out.apply(lambda r: (r["Receita"] / r["Investimento"]) if r["Investimento"] else 0.0, axis=1)
+    out["ACOS_Real_pct"] = out.apply(lambda r: (r["Investimento"] / r["Receita"] * 100) if r["Receita"] else 0.0, axis=1)
+
+    def _acao(r):
+        inv = float(r.get("Investimento") or 0)
+        rec = float(r.get("Receita") or 0)
+        roas = float(r.get("ROAS_Real") or 0)
+        imp = float(r.get("Impressoes") or 0)
+        clk = float(r.get("Cliques") or 0)
+        ctr = float(r.get("CTR_pct") or 0)
+        cvr = float(r.get("CVR_pct") or 0)
+
+        if imp < ads_min_imp or clk < ads_min_clk:
+            return "MANTER", "BAIXA", "Pouco volume, coletar mais dados"
+
+        if inv >= ads_pause_invest_min and rec <= 0:
+            return "PAUSAR/REVISAR", "ALTA", "Gasto sem retorno"
+
+        if inv >= ads_pause_invest_min and roas < roas_bad:
+            return "PAUSAR/REVISAR", "ALTA", "ROAS muito baixo"
+
+        if ctr < ads_ctr_min_abs:
+            return "OTIMIZAR ANUNCIO", "MEDIA", "CTR baixo, revisar título, foto, preço e proposta"
+
+        if cvr < ads_cvr_min:
+            return "OTIMIZAR ANUNCIO", "MEDIA", "CVR baixo, revisar preço, frete, reputação e página"
+
+        if roas >= roas_good:
+            return "ESCALAR", "ALTA", "ROAS alto e consistente"
+
+        return "MANTER", "MEDIA", "Dentro do esperado, monitorar"
+
+    recs = out.apply(lambda r: pd.Series(_acao(r), index=["Acao_Anuncio", "Confianca_Anuncio", "Motivo_Anuncio"]), axis=1)
+    out = pd.concat([out, recs], axis=1)
+
+    out = out.sort_values(["Acao_Anuncio", "Receita"], ascending=[True, False])
+    return out
+
+n
