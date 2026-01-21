@@ -740,7 +740,7 @@ def main():
         camp_raw = ml.load_campanhas_consolidado(campanhas_file)
         camp_agg = ml.build_campaign_agg(camp_raw, modo="consolidado")
 
-        kpis, pause, enter, scale, acos, camp_strat, ads_panel, ads_pause, ads_scale = ml.build_tables(
+        kpis, pause, enter, scale, acos, camp_strat, ads_panel, ads_pausar, ads_vencedores, ads_otim_fotos, ads_otim_keywords, ads_otim_oferta = ml.build_tables(
             org=org,
             camp_agg=camp_agg,
             pat=pat,
@@ -839,23 +839,51 @@ def main():
     # -------------------------
     # Nível de anúncio (Patrocinados)
     # -------------------------
-    with st.expander("Análise de Nível de Anúncio (Patrocinados)", expanded=False):
-        if ads_panel is None or (hasattr(ads_panel, 'empty') and ads_panel.empty):
+    with st.expander("Análise por Anúncio (Ads)", expanded=False):
+        if ads_panel is None or (hasattr(ads_panel, "empty") and ads_panel.empty):
             st.info("Sem dados de anúncios patrocinados para analisar.")
         else:
-            st.subheader("Painel por anúncio")
-            ads_view = prepare_df_for_view(ads_panel, drop_cpi_cols=True, drop_roas_generic=False)
-            st.dataframe(format_table_br(ads_view), use_container_width=True)
+            # KPIs rápidos do bloco
+            total_ads = int(len(ads_panel))
+            n_pausar = int(len(ads_pausar)) if ads_pausar is not None else 0
+            n_vencedores = int(len(ads_vencedores)) if ads_vencedores is not None else 0
+            n_fotos = int(len(ads_otim_fotos)) if ads_otim_fotos is not None else 0
+            n_kw = int(len(ads_otim_keywords)) if ads_otim_keywords is not None else 0
+            n_oferta = int(len(ads_otim_oferta)) if ads_otim_oferta is not None else 0
 
-            c1, c2 = st.columns(2)
-            with c1:
-                st.subheader("🛑 Pausar e revisar")
-                ads_pause_view = prepare_df_for_view(ads_pause, drop_cpi_cols=True, drop_roas_generic=False) if ads_pause is not None else pd.DataFrame()
-                st.dataframe(format_table_br(ads_pause_view), use_container_width=True)
-            with c2:
-                st.subheader("🚀 Escalar")
-                ads_scale_view = prepare_df_for_view(ads_scale, drop_cpi_cols=True, drop_roas_generic=False) if ads_scale is not None else pd.DataFrame()
-                st.dataframe(format_table_br(ads_scale_view), use_container_width=True)
+            c1, c2, c3, c4, c5, c6 = st.columns(6)
+            c1.metric("Anúncios", total_ads)
+            c2.metric("Vencedores", n_vencedores)
+            c3.metric("Pausar", n_pausar)
+            c4.metric("Fotos e Clips", n_fotos)
+            c5.metric("Palavras-chave", n_kw)
+            c6.metric("Oferta", n_oferta)
+
+            st.divider()
+
+            st.subheader("🛑 Anúncios para pausar (refino de campanha)")
+            ads_pausar_view = prepare_df_for_view(ads_pausar, drop_cpi_cols=True, drop_roas_generic=False) if ads_pausar is not None else pd.DataFrame()
+            st.dataframe(format_table_br(ads_pausar_view), use_container_width=True)
+
+            st.subheader("🏆 Anúncios vencedores (preservar)")
+            ads_vencedores_view = prepare_df_for_view(ads_vencedores, drop_cpi_cols=True, drop_roas_generic=False) if ads_vencedores is not None else pd.DataFrame()
+            st.dataframe(format_table_br(ads_vencedores_view), use_container_width=True)
+
+            st.subheader("🔧 Anúncios para otimização")
+            t1, t2, t3 = st.tabs(["Fotos e Clips", "Palavras-chave", "Oferta"])
+            with t1:
+                v = prepare_df_for_view(ads_otim_fotos, drop_cpi_cols=True, drop_roas_generic=False) if ads_otim_fotos is not None else pd.DataFrame()
+                st.dataframe(format_table_br(v), use_container_width=True)
+            with t2:
+                v = prepare_df_for_view(ads_otim_keywords, drop_cpi_cols=True, drop_roas_generic=False) if ads_otim_keywords is not None else pd.DataFrame()
+                st.dataframe(format_table_br(v), use_container_width=True)
+            with t3:
+                v = prepare_df_for_view(ads_otim_oferta, drop_cpi_cols=True, drop_roas_generic=False) if ads_otim_oferta is not None else pd.DataFrame()
+                st.dataframe(format_table_br(v), use_container_width=True)
+
+            with st.expander("Painel completo por anúncio", expanded=False):
+                ads_view = prepare_df_for_view(ads_panel, drop_cpi_cols=True, drop_roas_generic=False)
+                st.dataframe(format_table_br(ads_view), use_container_width=True)
 
     # -------------------------
     # Plano de Ação 15 Dias
