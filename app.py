@@ -789,13 +789,22 @@ def main():
     st.header("Indicadores Chave de Performance (KPIs)")
     cols = st.columns(4)
 
-    cols[0].metric("💰 Investimento Ads", fmt_money_br(float(kpis.get("Investimento Ads (R$)", 0))))
-    cols[1].metric("📈 Receita Ads", fmt_money_br(float(kpis.get("Receita Ads (R$)", 0))))
-    cols[2].metric("🎯 ROAS", fmt_number_br(float(kpis.get("ROAS", 0)), 2))
-
+    invest_ads = float(kpis.get("Investimento Ads (R$)", 0))
+    receita_ads = float(kpis.get("Receita Ads (R$)", 0))
+    roas_val = float(kpis.get("ROAS", 0))
     tacos_val = float(kpis.get("TACOS", 0))
     tacos_pct = tacos_val * 100 if tacos_val <= 2 else tacos_val
-    cols[3].metric("📉 TACOS", fmt_percent_br(tacos_pct), delta_color="inverse")
+
+    cols[0].metric("💰 Investimento Ads", fmt_money_br(invest_ads))
+    cols[1].metric("📈 Receita Ads", fmt_money_br(receita_ads))
+    
+    # ROAS com cor dinâmica (exemplo: > 5 é bom)
+    roas_delta = "Bom" if roas_val >= 5 else "Abaixo da meta"
+    cols[2].metric("🎯 ROAS", fmt_number_br(roas_val, 2), delta=roas_delta, delta_color="normal" if roas_val >= 5 else "inverse")
+
+    # TACOS com cor dinâmica (exemplo: < 10% é bom)
+    tacos_delta = "Saudável" if tacos_pct <= 10 else "Alto"
+    cols[3].metric("📉 TACOS", fmt_percent_br(tacos_pct), delta=tacos_delta, delta_color="normal" if tacos_pct <= 10 else "inverse")
 
     st.divider()
 
@@ -839,7 +848,7 @@ def main():
     # -------------------------
     # Nível de anúncio (Patrocinados)
     # -------------------------
-    with st.expander("Análise por Anúncio (Ads)", expanded=False):
+    with st.expander("🎯 Análise Tática por Anúncio (Ads)", expanded=False):
         if ads_panel is None or (hasattr(ads_panel, "empty") and ads_panel.empty):
             st.info("Sem dados de anúncios patrocinados para analisar.")
         else:
@@ -852,36 +861,44 @@ def main():
             n_oferta = int(len(ads_otim_oferta)) if ads_otim_oferta is not None else 0
 
             c1, c2, c3, c4, c5, c6 = st.columns(6)
-            c1.metric("Anúncios", total_ads)
-            c2.metric("Vencedores", n_vencedores)
-            c3.metric("Pausar", n_pausar)
-            c4.metric("Fotos e Clips", n_fotos)
-            c5.metric("Palavras-chave", n_kw)
-            c6.metric("Oferta", n_oferta)
+            c1.metric("Total Anúncios", total_ads)
+            c2.metric("🏆 Vencedores", n_vencedores)
+            c3.metric("🛑 Pausar", n_pausar)
+            c4.metric("📸 Fotos/Clips", n_fotos)
+            c5.metric("⌨️ Keywords", n_kw)
+            c6.metric("🏷️ Oferta", n_oferta)
 
             st.divider()
 
-            st.subheader("🛑 Anúncios para pausar (refino de campanha)")
-            ads_pausar_view = prepare_df_for_view(ads_pausar, drop_cpi_cols=True, drop_roas_generic=False) if ads_pausar is not None else pd.DataFrame()
-            st.dataframe(format_table_br(ads_pausar_view), use_container_width=True)
+            tab_pausar, tab_vencedores, tab_otim, tab_completo = st.tabs([
+                "🛑 Pausar", "🏆 Vencedores", "🔧 Otimização", "📊 Painel Completo"
+            ])
 
-            st.subheader("🏆 Anúncios vencedores (preservar)")
-            ads_vencedores_view = prepare_df_for_view(ads_vencedores, drop_cpi_cols=True, drop_roas_generic=False) if ads_vencedores is not None else pd.DataFrame()
-            st.dataframe(format_table_br(ads_vencedores_view), use_container_width=True)
+            with tab_pausar:
+                st.subheader("Anúncios para pausar (refino de campanha)")
+                ads_pausar_view = prepare_df_for_view(ads_pausar, drop_cpi_cols=True, drop_roas_generic=False) if ads_pausar is not None else pd.DataFrame()
+                st.dataframe(format_table_br(ads_pausar_view), use_container_width=True)
 
-            st.subheader("🔧 Anúncios para otimização")
-            t1, t2, t3 = st.tabs(["Fotos e Clips", "Palavras-chave", "Oferta"])
-            with t1:
-                v = prepare_df_for_view(ads_otim_fotos, drop_cpi_cols=True, drop_roas_generic=False) if ads_otim_fotos is not None else pd.DataFrame()
-                st.dataframe(format_table_br(v), use_container_width=True)
-            with t2:
-                v = prepare_df_for_view(ads_otim_keywords, drop_cpi_cols=True, drop_roas_generic=False) if ads_otim_keywords is not None else pd.DataFrame()
-                st.dataframe(format_table_br(v), use_container_width=True)
-            with t3:
-                v = prepare_df_for_view(ads_otim_oferta, drop_cpi_cols=True, drop_roas_generic=False) if ads_otim_oferta is not None else pd.DataFrame()
-                st.dataframe(format_table_br(v), use_container_width=True)
+            with tab_vencedores:
+                st.subheader("Anúncios vencedores (preservar)")
+                ads_vencedores_view = prepare_df_for_view(ads_vencedores, drop_cpi_cols=True, drop_roas_generic=False) if ads_vencedores is not None else pd.DataFrame()
+                st.dataframe(format_table_br(ads_vencedores_view), use_container_width=True)
 
-            with st.expander("Painel completo por anúncio", expanded=False):
+            with tab_otim:
+                st.subheader("Anúncios para otimização")
+                t1, t2, t3 = st.tabs(["📸 Fotos e Clips", "⌨️ Palavras-chave", "🏷️ Oferta"])
+                with t1:
+                    v = prepare_df_for_view(ads_otim_fotos, drop_cpi_cols=True, drop_roas_generic=False) if ads_otim_fotos is not None else pd.DataFrame()
+                    st.dataframe(format_table_br(v), use_container_width=True)
+                with t2:
+                    v = prepare_df_for_view(ads_otim_keywords, drop_cpi_cols=True, drop_roas_generic=False) if ads_otim_keywords is not None else pd.DataFrame()
+                    st.dataframe(format_table_br(v), use_container_width=True)
+                with t3:
+                    v = prepare_df_for_view(ads_otim_oferta, drop_cpi_cols=True, drop_roas_generic=False) if ads_otim_oferta is not None else pd.DataFrame()
+                    st.dataframe(format_table_br(v), use_container_width=True)
+
+            with tab_completo:
+                st.subheader("Painel completo por anúncio")
                 ads_view = prepare_df_for_view(ads_panel, drop_cpi_cols=True, drop_roas_generic=False)
                 st.dataframe(format_table_br(ads_view), use_container_width=True)
 
@@ -921,20 +938,30 @@ def main():
     acos_view = prepare_df_for_view(replace_acos_obj_with_roas_obj(acos_disp), drop_cpi_cols=True, drop_roas_generic=False)
     acos_fmt = format_table_br(acos_view)
 
-    c1, c2 = st.columns(2)
-    with c1:
-        st.subheader("🛑 Pausar ou revisar")
+    st.header("🎯 Ações Recomendadas por Categoria")
+    
+    tab_pausar, tab_entrar, tab_escalar, tab_roas = st.tabs([
+        "🛑 Pausar/Revisar", "✅ Entrar em Ads", "🚀 Escalar Orçamento", "⬇️ Baixar ROAS Objetivo"
+    ])
+
+    with tab_pausar:
+        st.subheader("🛑 Campanhas para pausar ou revisar")
+        st.info("Campanhas com ROAS baixo ou investimento sem retorno.")
         st.dataframe(pause_fmt, use_container_width=True)
-    with c2:
-        st.subheader("✅ Entrar em Ads")
+    
+    with tab_entrar:
+        st.subheader("✅ Oportunidades para entrar em Ads")
+        st.info("Anúncios orgânicos com alta conversão que ainda não estão em Ads.")
         st.dataframe(enter_fmt, use_container_width=True)
 
-    c3, c4 = st.columns(2)
-    with c3:
-        st.subheader("🚀 Escalar orçamento")
+    with tab_escalar:
+        st.subheader("🚀 Campanhas para escalar orçamento")
+        st.info("Campanhas com ROAS forte que estão perdendo impressões por orçamento.")
         st.dataframe(scale_fmt, use_container_width=True)
-    with c4:
-        st.subheader("⬇️ Baixar ROAS objetivo")
+
+    with tab_roas:
+        st.subheader("⬇️ Campanhas para baixar ROAS objetivo")
+        st.info("Campanhas competitivas que podem ganhar mais mercado reduzindo o ROAS alvo.")
         st.dataframe(acos_fmt, use_container_width=True)
 
     # -------------------------

@@ -1,127 +1,172 @@
-/* Custom CSS para o dashboard - Melhorado para melhor legibilidade */
+/* Estilo customizado para Streamlit - Tema Mercado Livre Ads */
 
-/* Cores inspiradas no Mercado Livre */
+/* Cores base */
 :root {
     --meli-yellow: #ffe600;
     --meli-blue: #3483fa;
-    --meli-dark: #333333;
+    --meli-green: #00a650;
+    --meli-red: #f53d3d;
+    --meli-dark: #121212;
+    --meli-light-dark: #1e1e1e;
+}
+
+/* Fundo e texto principal */
+section.main {
+    background-color: var(--meli-dark);
+    color: #f0f0f0;
+}
+
+/* Barra lateral */
+.stSidebar {
+    background-color: var(--meli-light-dark);
 }
 
 /* Título principal */
 h1 {
-    color: #ffffff;
     border-bottom: 3px solid var(--meli-yellow);
-    padding-bottom: 10px;
+    padding-bottom: 5px;
 }
 
-/* Subtítulos */
-h2, h3 {
-    color: #ffffff;
+/* Cards de KPI (st.metric) */
+div[data-testid="stMetric"] {
+    background-color: var(--meli-light-dark);
+    border-radius: 8px;
+    padding: 15px;
+    border-left: 5px solid var(--meli-blue);
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
 }
 
-/* Sidebar */
-.stSidebar {
-    background-color: #1e1e1e;
-}
-
-/* Botão principal */
-.stButton > button {
-    background-color: var(--meli-yellow) !important;
-    color: var(--meli-dark) !important;
-    font-weight: bold;
-    border: none;
-    border-radius: 5px;
-    padding: 10px 20px;
-    transition: all 0.3s ease;
-}
-
-.stButton > button:hover {
-    background-color: #ffcc00 !important;
-    color: var(--meli-dark) !important;
-    box-shadow: 0 4px 8px rgba(255, 230, 0, 0.3);
-}
-
-/* Métricas (KPIs) - Cartões com melhor contraste */
-[data-testid="stMetric"] {
-    background: linear-gradient(135deg, #1e3a8a 0%, #1e40af 100%);
-    border: 2px solid var(--meli-yellow);
-    padding: 20px;
-    border-radius: 10px;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-}
-
-[data-testid="stMetric"] > div:first-child {
-    color: #ffffff !important;
-    font-weight: 600;
-    font-size: 0.95rem;
-}
-
-[data-testid="stMetric"] > div:nth-child(2) {
-    color: var(--meli-yellow) !important;
-    font-weight: bold;
+/* Cor do valor principal do KPI */
+div[data-testid="stMetricValue"] {
+    color: var(--meli-yellow);
     font-size: 1.8rem;
 }
 
-[data-testid="stMetric"] > div:nth-child(3) {
-    color: #b0b0b0 !important;
-    font-size: 0.85rem;
+/* Cor do label do KPI */
+div[data-testid="stMetricLabel"] {
+    color: #ccc;
 }
 
-/* Expander (para as tabelas) */
-.streamlit-expanderHeader {
-    font-size: 1.1em;
+/* Cor do delta (para ROAS/TACOS) */
+div[data-testid="stMetricDelta"] {
     font-weight: bold;
-    color: #ffffff;
-    background-color: rgba(52, 131, 250, 0.1);
-    padding: 12px;
+}
+
+/* Tabela (DataFrame) */
+.stDataFrame {
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+/* Estilo para a tabela de Plano de Ação */
+.stDataFrame table {
+    border-collapse: collapse;
+}
+
+/* Estilo para a tabela de Plano de Ação (cores das fases) */
+.stDataFrame table tr td:nth-child(2) { /* Coluna Fase */
+    font-weight: bold;
+}
+
+/* Estilo para a tabela de Plano de Ação (cores das fases) */
+.stDataFrame table tr td:nth-child(2):contains("Semana 1") {
+    background-color: rgba(52, 131, 250, 0.2); /* Azul claro */
+}
+
+.stDataFrame table tr td:nth-child(2):contains("Semana 2") {
+    background-color: rgba(255, 230, 0, 0.2); /* Amarelo claro */
+}
+
+/* Estilo para a tabela de Ações (cores das ações) */
+/* Pausar/Revisar */
+.stDataFrame table tr td:contains("Revisar/pausar"),
+.stDataFrame table tr td:contains("HEMORRAGIA") {
+    background-color: rgba(245, 61, 61, 0.2); /* Vermelho claro */
+    color: var(--meli-red);
+    font-weight: bold;
+}
+
+/* Escalar Orçamento */
+.stDataFrame table tr td:contains("Aumentar orcamento"),
+.stDataFrame table tr td:contains("ESCALA_ORCAMENTO") {
+    background-color: rgba(0, 166, 80, 0.2); /* Verde claro */
+    color: var(--meli-green);
+    font-weight: bold;
+}
+
+/* Baixar ROAS Objetivo */
+.stDataFrame table tr td:contains("Baixar ROAS objetivo"),
+.stDataFrame table tr td:contains("COMPETITIVIDADE") {
+    background-color: rgba(255, 230, 0, 0.2); /* Amarelo claro */
+    color: var(--meli-yellow);
+    font-weight: bold;
+}
+
+/* Manter */
+.stDataFrame table tr td:contains("Manter"),
+.stDataFrame table tr td:contains("ESTAVEL") {
+    background-color: rgba(52, 131, 250, 0.1); /* Azul claro */
+    color: var(--meli-blue);
+}
+
+/* Estilo para a tabela de Estoque */
+.stDataFrame table tr td:contains("CRITICO") {
+    background-color: rgba(255, 165, 0, 0.2); /* Laranja claro */
+    color: orange;
+    font-weight: bold;
+}
+
+.stDataFrame table tr td:contains("ZERADO") {
+    background-color: rgba(245, 61, 61, 0.3); /* Vermelho mais forte */
+    color: var(--meli-red);
+    font-weight: bold;
+}
+
+/* Botões */
+.stButton>button {
+    background-color: var(--meli-blue);
+    color: white;
     border-radius: 5px;
-    border-left: 4px solid var(--meli-blue);
+    border: none;
+    padding: 10px 20px;
+    font-weight: bold;
 }
 
-/* Divisor */
-hr {
-    border-color: var(--meli-yellow);
-    opacity: 0.5;
+.stButton>button:hover {
+    background-color: #2a6edb;
 }
 
-/* Tabelas */
-[data-testid="stDataFrame"] {
-    background-color: #1e1e1e;
-    border: 1px solid #404040;
-    border-radius: 5px;
+/* Mensagens de status */
+div[data-testid="stAlert"] {
+    border-radius: 8px;
 }
 
-/* Texto em geral */
-body, p, span, label {
-    color: #ffffff !important;
+div[data-testid="stAlert"] div[role="alert"] {
+    background-color: var(--meli-light-dark);
+    border-left: 5px solid;
 }
 
-/* Inputs e campos de texto */
-.stTextInput > div > div > input,
-.stNumberInput > div > div > input,
-.stSelectbox > div > div > select {
-    background-color: #2d2d2d !important;
-    color: #ffffff !important;
-    border: 1px solid #404040 !important;
+div[data-testid="stAlert"] div[role="alert"].st-success {
+    border-left-color: var(--meli-green);
 }
 
-/* Mensagens de sucesso */
-.stSuccess {
-    background-color: rgba(34, 197, 94, 0.1) !important;
-    color: #86efac !important;
-    border: 1px solid #22c55e !important;
+div[data-testid="stAlert"] div[role="alert"].st-warning {
+    border-left-color: var(--meli-yellow);
 }
 
-/* Mensagens de erro */
-.stError {
-    background-color: rgba(239, 68, 68, 0.1) !important;
-    color: #fca5a5 !important;
-    border: 1px solid #ef4444 !important;
+div[data-testid="stAlert"] div[role="alert"].st-error {
+    border-left-color: var(--meli-red);
 }
 
-/* Mensagens de info */
-.stInfo {
-    background-color: rgba(59, 130, 246, 0.1) !important;
-    color: #93c5fd !important;
-    border: 1px solid #3b82f6 !important;
+/* Expander */
+.streamlit-expanderHeader {
+    background-color: var(--meli-light-dark);
+    border-radius: 8px;
+    padding: 10px;
+    margin-bottom: 10px;
+    border: 1px solid #333;
+}
+
+.streamlit-expanderContent {
+    padding: 10px;
 }
