@@ -269,7 +269,7 @@ def load_organico(organico_file) -> pd.DataFrame:
         convb = (b / v.replace({0: pd.NA})) * 100
         convb = convb.fillna(0).clip(lower=0, upper=100)
         org["Conv_Visitas_Compradores"] = convb
-if "ID" in org.columns:
+    if "ID" in org.columns:
         org["ID"] = org["ID"].astype(str).str.replace("MLB", "", regex=False).str.replace(r"\.0$", "", regex=True)
     return org
 
