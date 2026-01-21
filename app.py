@@ -802,9 +802,21 @@ def main():
     roas_delta = "Bom" if roas_val >= 5 else "Abaixo da meta"
     cols[2].metric("🎯 ROAS", fmt_number_br(roas_val, 2), delta=roas_delta, delta_color="normal" if roas_val >= 5 else "inverse")
 
-    # TACOS com cor dinâmica (exemplo: < 10% é bom)
-    tacos_delta = "Saudável" if tacos_pct <= 10 else "Alto"
-    cols[3].metric("📉 TACOS", fmt_percent_br(tacos_pct), delta=tacos_delta, delta_color="normal" if tacos_pct <= 10 else "inverse")
+    # TACOS com cor dinâmica (faixas: até 3% excelente, 3-5% bom, 5-7% alto, acima de 7% muito alto)
+    if tacos_pct <= 3:
+        tacos_label = "Excelente"
+        tacos_color = "normal"
+    elif tacos_pct <= 5:
+        tacos_label = "Bom"
+        tacos_color = "normal"
+    elif tacos_pct <= 7:
+        tacos_label = "Alto"
+        tacos_color = "inverse"
+    else:
+        tacos_label = "Muito Alto"
+        tacos_color = "inverse"
+    
+    cols[3].metric("📉 TACOS", fmt_percent_br(tacos_pct), delta=tacos_label, delta_color=tacos_color)
 
     st.divider()
 
