@@ -274,6 +274,150 @@ def load_organico(organico_file) -> pd.DataFrame:
     return org
 
 
+def save_snapshot_v2(df_campanha_estrategica: pd.DataFrame, df_anuncio_estrategico: pd.DataFrame, snapshot_path: str):
+    """
+    Salva o estado completo da análise (campanhas e anúncios) em um único arquivo Excel.
+    
+    df_campanha_estrategica: DataFrame com a análise de campanhas (incluindo Quadrante e Acao_Recomendada).
+    df_anuncio_estrategico: DataFrame com a análise de anúncios (incluindo Status_Anuncio e Acao_Anuncio).
+    snapshot_path: Caminho completo para salvar o arquivo Excel.
+    """
+    if df_campanha_estrategica is None or df_campanha_estrategica.empty:
+        raise ValueError("O DataFrame de Campanhas Estratégicas está vazio.")
+    if df_anuncio_estrategico is None or df_anuncio_estrategico.empty:
+        raise ValueError("O DataFrame de Anúncios Estratégicos está vazio.")
+
+    # Colunas essenciais para o snapshot de campanhas
+    camp_cols = [
+        "Nome", "Investimento", "Receita", "ROAS_Real", "ACOS_Objetivo", 
+        "Quadrante", "Acao_Recomendada", "Confianca_Dado", "Motivo",
+        "% de impressões perdidas por orçamento", "% de impressões perdidas por classificação"
+    ]
+    camp_snap = df_campanha_estrategica[[c for c in camp_cols if c in df_campanha_estrategica.columns]].copy()
+
+    # Colunas essenciais para o snapshot de anúncios
+    anuncio_cols = [
+        "ID", "Titulo", "Campanha", "Investimento", "Receita", "ROAS_Real", "CVR_pct",
+        "Status_Anuncio", "Acao_Anuncio", "Confianca_Anuncio", "Motivo_Anuncio", "Refino_Campanha"
+    ]
+    anuncio_snap = df_anuncio_estrategico[[c for c in anuncio_cols if c in df_anuncio_estrategico.columns]].copy()
+
+    # Salva em abas separadas
+    with pd.ExcelWriter(snapshot_path, engine='xlsxwriter') as writer:
+        camp_snap.to_excel(writer, sheet_name='Campanhas_Snapshot', index=False)
+        anuncio_snap.to_excel(writer, sheet_name='Anuncios_Snapshot', index=False)
+
+    return snapshot_path
+
+
+def load_snapshot_v2(snapshot_file) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """
+    Carrega o snapshot v2 (campanhas e anúncios) de um arquivo Excel.
+    """
+    if snapshot_file is None:
+        return None, None
+
+    try:
+        camp_snap = pd.read_excel(snapshot_file, sheet_name='Campanhas_Snapshot')
+        anuncio_snap = pd.read_excel(snapshot_file, sheet_name='Anuncios_Snapshot')
+        return camp_snap, anuncio_snap
+    except Exception as e:
+        print(f"Erro ao carregar snapshot v2: {e}")
+        return None, None
+
+
+def compare_snapshots_campanha(df_atual: pd.DataFrame, df_snapshot: pd.DataFrame) -> pd.DataFrame:
+    """
+    Compara o DataFrame de campanhas atual com o snapshot anterior.
+    Adiciona colunas de variação (delta) e migração de quadrante.
+    """
+    if df_snapshot is None or df_snapshot.empty:
+        return df_atual.copy()
+
+    # Renomear colunas do snapshot para evitar conflito
+    snap_cols_map = {
+        "Investimento": "Investimento_Snap",
+        "Receita": "Receita_Snap",
+        "ROAS_Real": "ROAS_Real_Snap",
+        "Quadrante": "Quadrante_Snap",
+        "Acao_Recomendada": "Acao_Recomendada_Snap",
+    }
+    df_snapshot_renamed = df_snapshot.rename(columns=snap_cols_map)
+
+    # Merge pelo nome da campanha
+    df_merged = df_atual.merge(
+        df_snapshot_renamed,
+        on="Nome",
+        how="left",
+        suffixes=("_Atual", "_Snap")
+    )
+
+    # Cálculo das variações (Delta)
+    df_merged["Delta_Investimento"] = df_merged["Investimento"] - df_merged.get("Investimento_Snap", 0)
+    df_merged["Delta_Receita"] = df_merged["Receita"] - df_merged.get("Receita_Snap", 0)
+    df_merged["Delta_ROAS"] = df_merged["ROAS_Real"] - df_merged.get("ROAS_Real_Snap", 0)
+
+    # Migração de Quadrante
+    def _migracao(row):
+        atual = str(row.get("Quadrante", "")).strip().upper()
+        snap = str(row.get("Quadrante_Snap", "")).strip().upper()
+        if not snap or snap == "NAN":
+            return "NOVA"
+        if atual == snap:
+            return "ESTÁVEL"
+        return f"DE {snap} PARA {atual}"
+
+    df_merged["Migracao_Quadrante"] = df_merged.apply(_migracao, axis=1)
+
+    return df_merged
+
+
+def compare_snapshots_anuncio(df_atual: pd.DataFrame, df_snapshot: pd.DataFrame) -> pd.DataFrame:
+    """
+    Compara o DataFrame de anúncios atual com o snapshot anterior.
+    Adiciona colunas de variação (delta) e migração de status.
+    """
+    if df_snapshot is None or df_snapshot.empty:
+        return df_atual.copy()
+
+    # Renomear colunas do snapshot para evitar conflito
+    snap_cols_map = {
+        "Investimento": "Investimento_Snap",
+        "Receita": "Receita_Snap",
+        "ROAS_Real": "ROAS_Real_Snap",
+        "Status_Anuncio": "Status_Anuncio_Snap",
+        "Acao_Anuncio": "Acao_Anuncio_Snap",
+    }
+    df_snapshot_renamed = df_snapshot.rename(columns=snap_cols_map)
+
+    # Merge pelo ID do anúncio (MLB)
+    df_merged = df_atual.merge(
+        df_snapshot_renamed,
+        on="ID",
+        how="left",
+        suffixes=("_Atual", "_Snap")
+    )
+
+    # Cálculo das variações (Delta)
+    df_merged["Delta_Investimento"] = df_merged["Investimento"] - df_merged.get("Investimento_Snap", 0)
+    df_merged["Delta_Receita"] = df_merged["Receita"] - df_merged.get("Receita_Snap", 0)
+    df_merged["Delta_ROAS"] = df_merged["ROAS_Real"] - df_merged.get("ROAS_Real_Snap", 0)
+
+    # Migração de Status
+    def _migracao(row):
+        atual = str(row.get("Status_Anuncio", "")).strip().upper()
+        snap = str(row.get("Status_Anuncio_Snap", "")).strip().upper()
+        if not snap or snap == "NAN":
+            return "NOVO"
+        if atual == snap:
+            return "ESTÁVEL"
+        return f"DE {snap} PARA {atual}"
+
+    df_merged["Migracao_Status"] = df_merged.apply(_migracao, axis=1)
+
+    return df_merged
+
+
 def load_patrocinados(patrocinados_file) -> pd.DataFrame:
     _safe_seek(patrocinados_file, 0)
     sheet = _pick_sheet(

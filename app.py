@@ -6,6 +6,7 @@ from datetime import datetime
 import re
 
 import ml_report as ml
+import os
 
 
 # -------------------------
@@ -685,7 +686,7 @@ def main():
         
         st.divider()
         st.subheader("Comparativo (Opcional)")
-        snapshot_file = st.file_uploader("Snapshot de Referencia (Excel)", type=["xlsx"], help="Arquivo gerado ha 15 dias para comparar evolucao")
+        snapshot_file = st.file_uploader("Snapshot de Referencia (Excel)", type=["xlsx"], help="Arquivo gerado ha 15 dias para comparar evolucao (Snapshot v2)")
         st.divider()
         st.subheader("Estoque (Opcional)")
         usar_estoque = st.checkbox("Ativar visão de estoque", value=False)
@@ -745,12 +746,16 @@ def main():
         # CTR e CVR acima são em pontos percentuais (ex.: 0,80 = 0.80%)
         st.divider()
         executar = st.button("Gerar relatório", use_container_width=True)
+        
+        # Botão para salvar o novo snapshot
+        st.divider()
+        salvar_snapshot = st.button("Salvar Snapshot V2", use_container_width=True, disabled=not executar)
 
     if not (organico_file and patrocinados_file and campanhas_file):
         st.info("Envie os 3 arquivos na barra lateral para liberar o relatório.")
         return
 
-    if not executar:
+    if not executar and not salvar_snapshot:
         st.warning("Quando estiver pronto, clique em Gerar relatório.")
         return
 
@@ -777,12 +782,44 @@ def main():
             ads_pause_invest_min=float(ads_pause_invest_min) if ('ads_pause_invest_min' in locals()) else 20.0,
         )
 
-        st.success("Relatório gerado com sucesso.")
+        # -------------------------
+        # Snapshot V2 - Carregamento e Comparação
+        # -------------------------
+        camp_snap, anuncio_snap = ml.load_snapshot_v2(snapshot_file)
+        
+        camp_strat_comp = ml.compare_snapshots_campanha(camp_strat, camp_snap)
+        ads_panel_comp = ml.compare_snapshots_anuncio(ads_panel, anuncio_snap)
+
+        # -------------------------
+        # Snapshot V2 - Salvamento
+        # -------------------------
+        if salvar_snapshot:
+            try:
+                # Gera um nome de arquivo único
+                filename = f"snapshot_ml_ads_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+                snapshot_path = os.path.join(os.getcwd(), filename)
+                ml.save_snapshot_v2(camp_strat, ads_panel, snapshot_path)
+                st.success(f"Snapshot V2 salvo com sucesso: {filename}")
+                st.download_button(
+                    label="Baixar Snapshot V2",
+                    data=open(snapshot_path, "rb").read(),
+                    file_name=filename,
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    use_container_width=True
+                )
+            except Exception as e:
+                st.error(f"Erro ao salvar o Snapshot V2: {e}")
+
+
+
+
         # -------------------------
         # Estoque (opcional) - ajuste apenas para exibicao
         # -------------------------
         blocked_stock = pd.DataFrame()
         pause_disp, enter_disp, scale_disp, acos_disp = pause, enter, scale, acos
+        camp_strat_disp = camp_strat_comp.copy()
+        ads_panel_disp = ads_panel_comp.copy()
         if "usar_estoque" in locals() and usar_estoque and estoque_file is not None:
             try:
                 stock_df = load_stock_file(estoque_file)
@@ -805,6 +842,56 @@ def main():
         st.exception(e)
         return
 
+    # -------------------------
+    # Sumário Executivo
+    # -------------------------
+    st.header("Sumário Executivo")
+    
+    # Geração do texto do sumário
+    def generate_executive_summary(kpis, camp_strat_comp, ads_panel_comp):
+        invest_ads = float(kpis.get("Investimento Ads (R$)", 0))
+        receita_ads = float(kpis.get("Receita Ads (R$)", 0))
+        roas_val = float(kpis.get("ROAS", 0))
+        tacos_pct = float(kpis.get("TACOS", 0)) * 100
+        
+        # Análise de Quadrantes
+        q_counts = camp_strat_comp["Quadrante"].value_counts()
+        q_hemorragia = q_counts.get("HEMORRAGIA", 0)
+        q_escala = q_counts.get("ESCALA", 0)
+        
+        # Análise de Migração
+        migracao_melhora = camp_strat_comp[camp_strat_comp["Migracao_Quadrante"].str.contains("HEMORRAGIA PARA ESTÁVEL|HEMORRAGIA PARA ESCALA|ESTÁVEL PARA ESCALA", na=False)].shape[0]
+        migracao_piora = camp_strat_comp[camp_strat_comp["Migracao_Quadrante"].str.contains("ESTÁVEL PARA HEMORRAGIA|ESCALA PARA HEMORRAGIA", na=False)].shape[0]
+        
+        # Análise de Anúncios
+        ads_pausar = ads_panel_comp[ads_panel_comp["Acao_Anuncio"] == "Pausar anúncio"].shape[0]
+        ads_vencedores = ads_panel_comp[ads_panel_comp["Status_Anuncio"] == "Vencedor"].shape[0]
+        
+        summary = f"""
+        A performance geral da sua conta de Mercado Livre Ads apresenta um **ROAS de {fmt_number_br(roas_val, 2)}x** e um **TACOS de {fmt_percent_br(tacos_pct)}**. 
+        
+        No total, foram investidos **{fmt_money_br(invest_ads)}** e gerados **{fmt_money_br(receita_ads)}** em receita direta de Ads.
+        
+        **Análise de Campanhas:**
+        - Atualmente, **{q_hemorragia}** campanhas estão classificadas como **HEMORRAGIA** (baixo ROAS), exigindo atenção imediata.
+        - **{q_escala}** campanhas estão prontas para **ESCALA** (ROAS forte com perda por orçamento).
+        
+        **Evolução (Comparativo com Snapshot):**
+        - **{migracao_melhora}** campanhas apresentaram melhora na classificação de quadrante (ex: saíram de Hemorragia).
+        - **{migracao_piora}** campanhas apresentaram piora na classificação, indicando a necessidade de revisão das ações tomadas.
+        
+        **Análise Tática (Anúncios):**
+        - Foram identificados **{ads_vencedores}** anúncios vencedores que devem ser preservados.
+        - **{ads_pausar}** anúncios estão recomendados para pausa imediata por baixo desempenho e alto investimento.
+        
+        O plano de ação de 15 dias foca em resolver as campanhas em Hemorragia e maximizar o potencial das campanhas em Escala.
+        """
+        return summary
+    
+    st.markdown(generate_executive_summary(kpis, camp_strat_comp, ads_panel_comp))
+    
+    st.divider()
+    
     # -------------------------
     # KPIs
     # -------------------------
@@ -857,14 +944,32 @@ def main():
     st.divider()
 
     # -------------------------
-    # Painel geral
-    # Importante: ml_report espera "ACOS Objetivo" dentro do camp_strat
+    # Painel geral (com comparação)
     # -------------------------
-    with st.expander("Painel Geral de Campanhas", expanded=True):
-        panel_raw = ml.build_control_panel(camp_strat)
-        panel_raw = replace_acos_obj_with_roas_obj(panel_raw)
-        panel_view = prepare_df_for_view(panel_raw, drop_cpi_cols=True, drop_roas_generic=False)
-        st.dataframe(format_table_br(panel_view), use_container_width=True)
+    with st.expander("Painel Geral de Campanhas (Comparativo)", expanded=True):
+        st.subheader("Evolução das Campanhas")
+        if camp_snap is not None and not camp_snap.empty:
+            st.info("Comparando com Snapshot de Referência.")
+            
+            # Exibe a migração de quadrantes
+            migracao_counts = camp_strat_disp["Migracao_Quadrante"].value_counts().reset_index()
+            migracao_counts.columns = ["Migração", "Contagem"]
+            st.dataframe(migracao_counts, use_container_width=True)
+
+            # Prepara a tabela de comparação para exibição
+            cols_to_show = [
+                "Nome", "Quadrante", "Migracao_Quadrante", "Acao_Recomendada", 
+                "Investimento", "Delta_Investimento", "Receita", "Delta_Receita", 
+                "ROAS_Real", "Delta_ROAS", "ROAS_Real_Snap", "Acao_Recomendada_Snap"
+            ]
+            camp_comp_view = prepare_df_for_view(camp_strat_disp[[c for c in cols_to_show if c in camp_strat_disp.columns]], drop_cpi_cols=True, drop_roas_generic=False)
+            st.dataframe(format_table_br(camp_comp_view), use_container_width=True)
+        else:
+            st.warning("Nenhum Snapshot de Referência carregado para comparação.")
+            panel_raw = ml.build_control_panel(camp_strat)
+            panel_raw = replace_acos_obj_with_roas_obj(panel_raw)
+            panel_view = prepare_df_for_view(panel_raw, drop_cpi_cols=True, drop_roas_generic=False)
+            st.dataframe(format_table_br(panel_view), use_container_width=True)
 
     st.divider()
 
@@ -880,16 +985,37 @@ def main():
     st.divider()
 
     # -------------------------
-    # Nível de anúncio (Patrocinados)
+    # Nível de anúncio (Patrocinados) - com comparação
     # -------------------------
-    with st.expander("🎯 Análise Tática por Anúncio (Ads)", expanded=False):
-        if ads_panel is None or (hasattr(ads_panel, "empty") and ads_panel.empty):
+    with st.expander("🎯 Análise Tática por Anúncio (Ads) - Comparativo", expanded=False):
+        if ads_panel_comp is None or (hasattr(ads_panel_comp, "empty") and ads_panel_comp.empty):
             st.info("Sem dados de anúncios patrocinados para analisar.")
         else:
             # KPIs rápidos do bloco
-            total_ads = int(len(ads_panel))
+            total_ads = int(len(ads_panel_comp))
             n_pausar = int(len(ads_pausar)) if ads_pausar is not None else 0
             n_vencedores = int(len(ads_vencedores)) if ads_vencedores is not None else 0
+
+            if anuncio_snap is not None and not anuncio_snap.empty:
+                st.subheader("Evolução dos Anúncios (MLB)")
+                
+                # Exibe a migração de status
+                migracao_counts_ads = ads_panel_comp["Migracao_Status"].value_counts().reset_index()
+                migracao_counts_ads.columns = ["Migração", "Contagem"]
+                st.dataframe(migracao_counts_ads, use_container_width=True)
+
+                # Prepara a tabela de comparação para exibição
+                cols_to_show_ads = [
+                    "ID", "Titulo", "Campanha", "Status_Anuncio", "Migracao_Status", 
+                    "Investimento", "Delta_Investimento", "Receita", "Delta_Receita", 
+                    "ROAS_Real", "Delta_ROAS", "ROAS_Real_Snap", "Acao_Anuncio", "Acao_Anuncio_Snap"
+                ]
+                ads_comp_view = prepare_df_for_view(ads_panel_comp[[c for c in cols_to_show_ads if c in ads_panel_comp.columns]], drop_cpi_cols=True, drop_roas_generic=False)
+                st.dataframe(format_table_br(ads_comp_view), use_container_width=True)
+            else:
+                st.warning("Nenhum Snapshot de Referência carregado para comparação a nível de anúncio.")
+                # Se não tem snapshot, exibe o painel normal
+                st.subheader("Análise Tática por Anúncio (Ads)")
             n_fotos = int(len(ads_otim_fotos)) if ads_otim_fotos is not None else 0
             n_kw = int(len(ads_otim_keywords)) if ads_otim_keywords is not None else 0
             n_oferta = int(len(ads_otim_oferta)) if ads_otim_oferta is not None else 0
