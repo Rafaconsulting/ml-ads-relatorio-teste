@@ -883,11 +883,11 @@ def main():
         st.divider()
         
         # 2. Cards de Insights Rápidos (Grid 1x3)
-    col1, col2, col3 = st.columns(3)
-    
-    col1.metric("⚡ Escala", f"{q_escala} Campanhas", "Aumentar Orçamento")
-    col2.metric("⊘ Hemorragia", f"{q_hemorragia} Campanhas", "Pausar ou Otimizar")
-    col3.metric("✕ Pausar", f"{ads_pausar} Anúncios", "Baixo Desempenho")
+        col1, col2, col3 = st.columns(3)
+        
+        col1.metric("⚡ Escala", f"{q_escala} Campanhas", "Aumentar Orçamento")
+        col2.metric("⊘ Hemorragia", f"{q_hemorragia} Campanhas", "Pausar ou Otimizar")
+        col3.metric("✕ Pausar", f"{ads_pausar} Anúncios", "Baixo Desempenho")
         
         st.divider()
         
