@@ -874,20 +874,20 @@ def main():
         
         # 1. Status Geral (Badge Colorido)
         if q_hemorragia > 0 and roas_val < 4.0:
-            st.error("STATUS CRÍTICO: Hemorragia alta e ROAS abaixo da meta.")
+            st.error("⊘ STATUS CRÍTICO: Hemorragia alta e ROAS abaixo da meta.")
         elif q_escala > 0:
-            st.info("STATUS ATENÇÃO: Oportunidades de escala não aproveitadas.")
+            st.info("⚡ STATUS ATENÇÃO: Oportunidades de escala não aproveitadas.")
         else:
-            st.success("STATUS SAUDÁVEL: Conta controlada e ROAS acima da meta.")
+            st.success("◈ STATUS SAUDÁVEL: Conta controlada e ROAS acima da meta.")
             
         st.divider()
         
         # 2. Cards de Insights Rápidos (Grid 1x3)
-        col1, col2, col3 = st.columns(3)
-        
-        col1.metric("Oportunidades de Escala", f"{q_escala} Campanhas", "Aumentar Orçamento")
-        col2.metric("Risco de Hemorragia", f"{q_hemorragia} Campanhas", "Pausar ou Otimizar")
-        col3.metric("Anúncios a Pausar", f"{ads_pausar} Anúncios", "Baixo Desempenho")
+    col1, col2, col3 = st.columns(3)
+    
+    col1.metric("⚡ Escala", f"{q_escala} Campanhas", "Aumentar Orçamento")
+    col2.metric("⊘ Hemorragia", f"{q_hemorragia} Campanhas", "Pausar ou Otimizar")
+    col3.metric("✕ Pausar", f"{ads_pausar} Anúncios", "Baixo Desempenho")
         
         st.divider()
         
@@ -930,13 +930,13 @@ def main():
     tacos_val = float(kpis.get("TACOS", 0))
     tacos_pct = tacos_val * 100 if tacos_val <= 2 else tacos_val
 
-    cols[0].metric("Investimento Ads", fmt_money_br(invest_ads))
-    cols[1].metric("Receita Ads", fmt_money_br(receita_ads))
+    cols[0].metric("⟀ Investimento", fmt_money_br(invest_ads))
+    cols[1].metric("⟁ Receita", fmt_money_br(receita_ads))
     
     # ROAS com cor dinâmica
     roas_label = "Bom" if roas_val >= 5 else "Abaixo da meta"
     cols[2].metric(
-        "ROAS", 
+        "◎ ROAS", 
         fmt_number_br(roas_val, 2), 
         delta=roas_label, 
         delta_color="normal" if roas_val >= 5 else "inverse"
@@ -956,7 +956,7 @@ def main():
         tacos_label = "Muito Alto"
         tacos_color = "inverse"
     
-    cols[3].metric("TACOS", fmt_percent_br(tacos_pct), delta=tacos_label, delta_color=tacos_color)
+    cols[3].metric("⊞ TACOS", fmt_percent_br(tacos_pct), delta=tacos_label, delta_color=tacos_color)
 
     st.divider()
 
@@ -1013,16 +1013,16 @@ def main():
 
             c1, c2, c3, c4, c5, c6 = st.columns(6)
             c1.metric("Total Anúncios", total_ads)
-            c2.metric("Vencedores", n_vencedores)
-            c3.metric("Pausar", n_pausar)
-            c4.metric("Fotos/Clips", n_fotos)
-            c5.metric("Keywords", n_kw)
-            c6.metric("Oferta", n_oferta)
+            c2.metric("◈ Vencedores", n_vencedores)
+            c3.metric("✕ Pausar", n_pausar)
+            c4.metric("◨ Fotos/Clips", n_fotos)
+            c5.metric("⌨ Keywords", n_kw)
+            c6.metric("🏷 Oferta", n_oferta)
 
             st.divider()
 
             tab_pausar, tab_vencedores, tab_otim, tab_completo = st.tabs([
-                "Pausar", "Vencedores", "Otimização", "Painel Completo"
+                "✕ Pausar", "◈ Vencedores", "🔧 Otimização", "📊 Painel"
             ])
 
             with tab_pausar:
@@ -1092,7 +1092,7 @@ def main():
     st.header("Ações Recomendadas por Categoria")
     
     tab_pausar, tab_entrar, tab_escalar, tab_roas = st.tabs([
-        "Pausar/Revisar", "Entrar em Ads", "Escalar Orçamento", "Baixar ROAS Objetivo"
+        "✕ Pausar", "✓ Entrar", "⚡ Escalar", "◎ ROAS Obj"
     ])
 
     with tab_pausar:
@@ -1206,12 +1206,12 @@ def main():
             return f"{val:+.2f}x"
 
         c_cols = st.columns(4)
-        c_cols[0].metric("Investimento", fmt_money_br(invest_ads), delta=fmt_delta_money(delta_invest), delta_color="inverse")
-        c_cols[1].metric("Receita", fmt_money_br(receita_ads), delta=fmt_delta_money(delta_receita))
-        c_cols[2].metric("ROAS", f"{roas_val:.2f}x", delta=fmt_delta_roas(delta_roas))
+        c_cols[0].metric("⟀ Investimento", fmt_money_br(invest_ads), delta=fmt_delta_money(delta_invest), delta_color="inverse")
+        c_cols[1].metric("⟁ Receita", fmt_money_br(receita_ads), delta=fmt_delta_money(delta_receita))
+        c_cols[2].metric("◎ ROAS", f"{roas_val:.2f}x", delta=fmt_delta_roas(delta_roas))
         
         # Tacos Delta (se disponível)
-        c_cols[3].metric("TACOS", fmt_percent_br(tacos_pct), delta="Atual")
+        c_cols[3].metric("⊞ TACOS", fmt_percent_br(tacos_pct), delta="Atual")
 
         st.divider()
         
