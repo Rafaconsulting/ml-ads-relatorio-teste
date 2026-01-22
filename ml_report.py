@@ -332,7 +332,11 @@ def compare_snapshots_campanha(df_atual: pd.DataFrame, df_snapshot: pd.DataFrame
     Adiciona colunas de variação (delta) e migração de quadrante.
     """
     if df_snapshot is None or df_snapshot.empty:
-        return df_atual.copy()
+        df_out = df_atual.copy()
+        df_out["Delta_Investimento"] = 0.0
+        df_out["Delta_Receita"] = 0.0
+        df_out["Delta_ROAS"] = 0.0
+        return df_out
 
     # Renomear colunas do snapshot para evitar conflito
     snap_cols_map = {
@@ -378,7 +382,11 @@ def compare_snapshots_anuncio(df_atual: pd.DataFrame, df_snapshot: pd.DataFrame)
     Adiciona colunas de variação (delta) e migração de status.
     """
     if df_snapshot is None or df_snapshot.empty:
-        return df_atual.copy()
+        df_out = df_atual.copy()
+        df_out["Delta_Investimento"] = 0.0
+        df_out["Delta_Receita"] = 0.0
+        df_out["Delta_ROAS"] = 0.0
+        return df_out
 
     # Renomear colunas do snapshot para evitar conflito
     snap_cols_map = {

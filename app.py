@@ -859,13 +859,20 @@ def main():
         q_hemorragia = q_counts.get("HEMORRAGIA", 0)
         q_escala = q_counts.get("ESCALA", 0)
         
-        # Análise de Migração
-        migracao_melhora = camp_strat_comp[camp_strat_comp["Migracao_Quadrante"].str.contains("HEMORRAGIA PARA ESTÁVEL|HEMORRAGIA PARA ESCALA|ESTÁVEL PARA ESCALA", na=False)].shape[0]
-        migracao_piora = camp_strat_comp[camp_strat_comp["Migracao_Quadrante"].str.contains("ESTÁVEL PARA HEMORRAGIA|ESCALA PARA HEMORRAGIA", na=False)].shape[0]
+        # Análise de Migração (Protegida contra colunas ausentes)
+        migracao_text = ""
+        if "Migracao_Quadrante" in camp_strat_comp.columns:
+            migracao_melhora = camp_strat_comp[camp_strat_comp["Migracao_Quadrante"].str.contains("HEMORRAGIA PARA ESTÁVEL|HEMORRAGIA PARA ESCALA|ESTÁVEL PARA ESCALA", na=False)].shape[0]
+            migracao_piora = camp_strat_comp[camp_strat_comp["Migracao_Quadrante"].str.contains("ESTÁVEL PARA HEMORRAGIA|ESCALA PARA HEMORRAGIA", na=False)].shape[0]
+            migracao_text = f"""
+        **Evolução (Comparativo com Snapshot):**
+        - **{migracao_melhora}** campanhas apresentaram melhora na classificação de quadrante (ex: saíram de Hemorragia).
+        - **{migracao_piora}** campanhas apresentaram piora na classificação, indicando a necessidade de revisão das ações tomadas.
+            """
         
         # Análise de Anúncios
-        ads_pausar = ads_panel_comp[ads_panel_comp["Acao_Anuncio"] == "Pausar anúncio"].shape[0]
-        ads_vencedores = ads_panel_comp[ads_panel_comp["Status_Anuncio"] == "Vencedor"].shape[0]
+        ads_pausar = ads_panel_comp[ads_panel_comp["Acao_Anuncio"] == "Pausar anúncio"].shape[0] if "Acao_Anuncio" in ads_panel_comp.columns else 0
+        ads_vencedores = ads_panel_comp[ads_panel_comp["Status_Anuncio"] == "Vencedor"].shape[0] if "Status_Anuncio" in ads_panel_comp.columns else 0
         
         summary = f"""
         A performance geral da sua conta de Mercado Livre Ads apresenta um **ROAS de {fmt_number_br(roas_val, 2)}x** e um **TACOS de {fmt_percent_br(tacos_pct)}**. 
@@ -875,11 +882,7 @@ def main():
         **Análise de Campanhas:**
         - Atualmente, **{q_hemorragia}** campanhas estão classificadas como **HEMORRAGIA** (baixo ROAS), exigindo atenção imediata.
         - **{q_escala}** campanhas estão prontas para **ESCALA** (ROAS forte com perda por orçamento).
-        
-        **Evolução (Comparativo com Snapshot):**
-        - **{migracao_melhora}** campanhas apresentaram melhora na classificação de quadrante (ex: saíram de Hemorragia).
-        - **{migracao_piora}** campanhas apresentaram piora na classificação, indicando a necessidade de revisão das ações tomadas.
-        
+        {migracao_text}
         **Análise Tática (Anúncios):**
         - Foram identificados **{ads_vencedores}** anúncios vencedores que devem ser preservados.
         - **{ads_pausar}** anúncios estão recomendados para pausa imediata por baixo desempenho e alto investimento.
