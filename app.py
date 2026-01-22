@@ -849,55 +849,72 @@ def main():
         return
 
     # -------------------------
-    # Sumário Executivo
+    # Sumário Executivo (Minimalista)
     # -------------------------
     st.header("Sumário Executivo")
     
     # Geração do texto do sumário
     def generate_executive_summary(kpis, camp_strat_comp, ads_panel_comp):
-        invest_ads = float(kpis.get("Investimento Ads (R$)", 0))
-        receita_ads = float(kpis.get("Receita Ads (R$)", 0))
         roas_val = float(kpis.get("ROAS", 0))
-        tacos_pct = float(kpis.get("TACOS", 0)) * 100
         
         # Análise de Quadrantes
         q_counts = camp_strat_comp["Quadrante"].value_counts()
         q_hemorragia = q_counts.get("HEMORRAGIA", 0)
-        q_escala = q_counts.get("ESCALA", 0)
+        q_escala = q_counts.get("ESCALA_ORCAMENTO", 0)
         
         # Análise de Migração (Protegida contra colunas ausentes)
-        migracao_text = ""
+        migracao_melhora = 0
+        migracao_piora = 0
         if "Migracao_Quadrante" in camp_strat_comp.columns:
             migracao_melhora = camp_strat_comp[camp_strat_comp["Migracao_Quadrante"].str.contains("HEMORRAGIA PARA ESTÁVEL|HEMORRAGIA PARA ESCALA|ESTÁVEL PARA ESCALA", na=False)].shape[0]
             migracao_piora = camp_strat_comp[camp_strat_comp["Migracao_Quadrante"].str.contains("ESTÁVEL PARA HEMORRAGIA|ESCALA PARA HEMORRAGIA", na=False)].shape[0]
-            migracao_text = f"""
-        **Evolução (Comparativo com Snapshot):**
-        - **{migracao_melhora}** campanhas apresentaram melhora na classificação de quadrante (ex: saíram de Hemorragia).
-        - **{migracao_piora}** campanhas apresentaram piora na classificação, indicando a necessidade de revisão das ações tomadas.
-            """
         
         # Análise de Anúncios
         ads_pausar = ads_panel_comp[ads_panel_comp["Acao_Anuncio"] == "Pausar anúncio"].shape[0] if "Acao_Anuncio" in ads_panel_comp.columns else 0
-        ads_vencedores = ads_panel_comp[ads_panel_comp["Status_Anuncio"] == "Vencedor"].shape[0] if "Status_Anuncio" in ads_panel_comp.columns else 0
         
-        summary = f"""
-        A performance geral da sua conta de Mercado Livre Ads apresenta um **ROAS de {fmt_number_br(roas_val, 2)}x** e um **TACOS de {fmt_percent_br(tacos_pct)}**. 
+        # 1. Status Geral (Badge Colorido)
+        if q_hemorragia > 0 and roas_val < 4.0:
+            st.error("🔴 STATUS CRÍTICO: Hemorragia alta e ROAS abaixo da meta.")
+        elif q_escala > 0:
+            st.info("🟡 STATUS ATENÇÃO: Oportunidades de escala não aproveitadas.")
+        else:
+            st.success("🟢 STATUS SAUDÁVEL: Conta controlada e ROAS acima da meta.")
+            
+        st.divider()
         
-        No total, foram investidos **{fmt_money_br(invest_ads)}** e gerados **{fmt_money_br(receita_ads)}** em receita direta de Ads.
+        # 2. Cards de Insights Rápidos (Grid 1x3)
+        col1, col2, col3 = st.columns(3)
         
-        **Análise de Campanhas:**
-        - Atualmente, **{q_hemorragia}** campanhas estão classificadas como **HEMORRAGIA** (baixo ROAS), exigindo atenção imediata.
-        - **{q_escala}** campanhas estão prontas para **ESCALA** (ROAS forte com perda por orçamento).
-        {migracao_text}
-        **Análise Tática (Anúncios):**
-        - Foram identificados **{ads_vencedores}** anúncios vencedores que devem ser preservados.
-        - **{ads_pausar}** anúncios estão recomendados para pausa imediata por baixo desempenho e alto investimento.
+        col1.metric("Oportunidades de Escala", f"{q_escala} Campanhas", "Aumentar Orçamento")
+        col2.metric("Risco de Hemorragia", f"{q_hemorragia} Campanhas", "Pausar ou Otimizar")
+        col3.metric("Anúncios a Pausar", f"{ads_pausar} Anúncios", "Baixo Desempenho")
         
-        O plano de ação de 15 dias foca em resolver as campanhas em Hemorragia e maximizar o potencial das campanhas em Escala.
-        """
-        return summary
-    
-    st.markdown(generate_executive_summary(kpis, camp_strat_comp, ads_panel_comp))
+        st.divider()
+        
+        # 3. Plano de Ação "Direto ao Ponto"
+        st.subheader("Plano de Ação Imediato")
+        
+        # Ações Urgentes (Hemorragia)
+        if q_hemorragia > 0:
+            st.markdown(f"- **Estancar Hemorragia**: {q_hemorragia} campanhas exigem ação imediata (pausar ou reduzir ROAS objetivo).")
+        
+        # Ações de Escala
+        if q_escala > 0:
+            st.markdown(f"- **Destravar Escala**: {q_escala} campanhas estão prontas para aumento de orçamento.")
+            
+        # Ações de Migração (se houver snapshot)
+        if migracao_melhora > 0 or migracao_piora > 0:
+            st.subheader("Evolução da Estratégia (vs. Snapshot)")
+            if migracao_melhora > 0:
+                st.markdown(f"- **{migracao_melhora} Campanhas Melhoraram** de quadrante (sucesso nas ações passadas).")
+            if migracao_piora > 0:
+                st.markdown(f"- **{migracao_piora} Campanhas Pioraram** de quadrante (revisar ações ou fatores externos).")
+        
+        # Retorna uma string vazia, pois a função agora desenha a interface diretamente
+        return ""
+
+    # A função agora desenha a interface diretamente, então apenas a chamamos
+    generate_executive_summary(kpis, camp_strat_comp, ads_panel_comp)
     
     st.divider()
     
@@ -1167,13 +1184,12 @@ def main():
             snap_invest = float(kpis_snap.get("Investimento Ads (R$)", 0))
             snap_receita = float(kpis_snap.get("Receita Ads (R$)", 0))
             snap_roas = float(kpis_snap.get("ROAS", 0))
-            st.sidebar.info("✅ Usando KPIs Globais do Snapshot")
+            pass
         else:
             # Fallback para snapshots antigos (soma das campanhas ativas)
             snap_invest = float(pd.to_numeric(camp_snap["Investimento"], errors="coerce").fillna(0).sum())
             snap_receita = float(pd.to_numeric(camp_snap["Receita"], errors="coerce").fillna(0).sum())
             snap_roas = snap_receita / snap_invest if snap_invest > 0 else 0
-            st.sidebar.warning("⚠️ Usando Fallback (Soma de Campanhas)")
         
         delta_invest = invest_ads - snap_invest
         delta_receita = receita_ads - snap_receita
