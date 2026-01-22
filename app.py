@@ -912,14 +912,46 @@ def main():
     tacos_val = float(kpis.get("TACOS", 0))
     tacos_pct = tacos_val * 100 if tacos_val <= 2 else tacos_val
 
-    cols[0].metric("💰 Investimento Ads", fmt_money_br(invest_ads))
-    cols[1].metric("📈 Receita Ads", fmt_money_br(receita_ads))
-    
-    # ROAS com cor dinâmica (exemplo: > 5 é bom)
-    roas_delta = "Bom" if roas_val >= 5 else "Abaixo da meta"
-    cols[2].metric("🎯 ROAS", fmt_number_br(roas_val, 2), delta=roas_delta, delta_color="normal" if roas_val >= 5 else "inverse")
+    # Cálculo de Deltas Globais se houver snapshot
+    delta_invest = None
+    delta_receita = None
+    delta_roas = None
+    delta_tacos = None
 
-    # TACOS com cor dinâmica (faixas: até 3% excelente, 3-5% bom, 5-7% alto, acima de 7% muito alto)
+    if camp_snap is not None and not camp_snap.empty:
+        snap_invest = camp_snap["Investimento"].sum()
+        snap_receita = camp_snap["Receita"].sum()
+        snap_roas = snap_receita / snap_invest if snap_invest > 0 else 0
+        
+        delta_invest = invest_ads - snap_invest
+        delta_receita = receita_ads - snap_receita
+        delta_roas = roas_val - snap_roas
+        
+        # Para o TACOS, como não temos a receita total no snapshot simplificado, 
+        # comparamos apenas se houver dados suficientes ou mantemos o label dinâmico.
+
+    cols[0].metric(
+        "💰 Investimento Ads", 
+        fmt_money_br(invest_ads), 
+        delta=fmt_money_br(delta_invest) if delta_invest is not None else None,
+        delta_color="inverse" # Mais investimento costuma ser "ruim" em Ads se não houver retorno
+    )
+    cols[1].metric(
+        "📈 Receita Ads", 
+        fmt_money_br(receita_ads),
+        delta=fmt_money_br(delta_receita) if delta_receita is not None else None
+    )
+    
+    # ROAS com cor dinâmica
+    roas_label = fmt_number_br(delta_roas, 2) + "x" if delta_roas is not None else ("Bom" if roas_val >= 5 else "Abaixo da meta")
+    cols[2].metric(
+        "🎯 ROAS", 
+        fmt_number_br(roas_val, 2), 
+        delta=roas_label, 
+        delta_color="normal" if (delta_roas if delta_roas is not None else (roas_val - 5)) >= 0 else "inverse"
+    )
+
+    # TACOS com cor dinâmica
     if tacos_pct <= 3:
         tacos_label = "Excelente"
         tacos_color = "normal"
