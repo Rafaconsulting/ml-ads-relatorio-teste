@@ -274,13 +274,13 @@ def load_organico(organico_file) -> pd.DataFrame:
     return org
 
 
-def save_snapshot_v2(df_campanha_estrategica: pd.DataFrame, df_anuncio_estrategico: pd.DataFrame, snapshot_path: str):
+def save_snapshot_v2(df_campanha_estrategica, df_anuncio_estrategico, snapshot_path, kpis_globais=None):
     """
-    Salva o estado completo da análise (campanhas e anúncios) em um único arquivo Excel.
-    
-    df_campanha_estrategica: DataFrame com a análise de campanhas (incluindo Quadrante e Acao_Recomendada).
-    df_anuncio_estrategico: DataFrame com a análise de anúncios (incluindo Status_Anuncio e Acao_Anuncio).
+    Salva um snapshot completo (campanhas e anúncios) em um arquivo Excel.
+    df_campanha_estrategica: DataFrame com a análise de campanhas.
+    df_anuncio_estrategico: DataFrame com a análise de anúncios.
     snapshot_path: Caminho completo para salvar o arquivo Excel.
+    kpis_globais: Dicionário com os KPIs totais da conta (Investimento, Receita, etc).
     """
     if df_campanha_estrategica is None or df_campanha_estrategica.empty:
         raise ValueError("O DataFrame de Campanhas Estratégicas está vazio.")
@@ -306,24 +306,39 @@ def save_snapshot_v2(df_campanha_estrategica: pd.DataFrame, df_anuncio_estrategi
     with pd.ExcelWriter(snapshot_path, engine='xlsxwriter') as writer:
         camp_snap.to_excel(writer, sheet_name='Campanhas_Snapshot', index=False)
         anuncio_snap.to_excel(writer, sheet_name='Anuncios_Snapshot', index=False)
+        
+        # Salva KPIs globais em uma aba dedicada para garantir paridade total
+        if kpis_globais:
+            df_kpis = pd.DataFrame([kpis_globais])
+            df_kpis.to_excel(writer, sheet_name='KPIs_Globais', index=False)
 
-    return snapshot_path
+    return snapshot_pathth
 
 
-def load_snapshot_v2(snapshot_file) -> tuple[pd.DataFrame, pd.DataFrame]:
+def load_snapshot_v2(snapshot_file) -> tuple[pd.DataFrame, pd.DataFrame, dict]:
     """
-    Carrega o snapshot v2 (campanhas e anúncios) de um arquivo Excel.
+    Carrega o snapshot v2 (campanhas, anúncios e KPIs) de um arquivo Excel.
     """
     if snapshot_file is None:
-        return None, None
+        return None, None, None
 
     try:
         camp_snap = pd.read_excel(snapshot_file, sheet_name='Campanhas_Snapshot')
         anuncio_snap = pd.read_excel(snapshot_file, sheet_name='Anuncios_Snapshot')
-        return camp_snap, anuncio_snap
+        
+        kpis_snap = {}
+        try:
+            df_kpis = pd.read_excel(snapshot_file, sheet_name='KPIs_Globais')
+            if not df_kpis.empty:
+                kpis_snap = df_kpis.iloc[0].to_dict()
+        except:
+            # Fallback para snapshots antigos que não tinham essa aba
+            pass
+            
+        return camp_snap, anuncio_snap, kpis_snap
     except Exception as e:
         print(f"Erro ao carregar snapshot v2: {e}")
-        return None, None
+        return None, None, None
 
 
 def compare_snapshots_campanha(df_atual: pd.DataFrame, df_snapshot: pd.DataFrame) -> pd.DataFrame:

@@ -785,7 +785,7 @@ def main():
         # -------------------------
         # Snapshot V2 - Carregamento e Comparação
         # -------------------------
-        camp_snap, anuncio_snap = ml.load_snapshot_v2(snapshot_file)
+        camp_snap, anuncio_snap, kpis_snap = ml.load_snapshot_v2(snapshot_file)
         
         camp_strat_comp = ml.compare_snapshots_campanha(camp_strat, camp_snap)
         ads_panel_comp = ml.compare_snapshots_anuncio(ads_panel, anuncio_snap)
@@ -798,7 +798,8 @@ def main():
                 # Gera um nome de arquivo único
                 filename = f"snapshot_ml_ads_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
                 snapshot_path = os.path.join(os.getcwd(), filename)
-                ml.save_snapshot_v2(camp_strat, ads_panel, snapshot_path)
+                # Passamos os KPIs globais para garantir paridade total no comparativo futuro
+                ml.save_snapshot_v2(camp_strat, ads_panel, snapshot_path, kpis_globais=kpis)
                 
                 # Para download automático no Streamlit, usamos o download_button 
                 # mas ele precisa ser clicado pelo usuário. 
@@ -1162,14 +1163,16 @@ def main():
         st.subheader("Resumo de Performance (Antes vs. Depois)")
         c_cols = st.columns(4)
         
-        # Filtramos apenas as campanhas que estão presentes no relatório atual para garantir paridade
-        # ou usamos a soma total se o objetivo for comparar a conta como um todo.
-        # Para evitar divergências por campanhas inativas que sumiram do relatório atual, 
-        # vamos garantir que o cálculo de soma seja idêntico ao build_tables.
-        
-        snap_invest = float(pd.to_numeric(camp_snap["Investimento"], errors="coerce").fillna(0).sum())
-        snap_receita = float(pd.to_numeric(camp_snap["Receita"], errors="coerce").fillna(0).sum())
-        snap_roas = snap_receita / snap_invest if snap_invest > 0 else 0
+        # Priorizamos os KPIs globais salvos no snapshot para garantir paridade total
+        if kpis_snap:
+            snap_invest = float(kpis_snap.get("Investimento Ads (R$)", 0))
+            snap_receita = float(kpis_snap.get("Receita Ads (R$)", 0))
+            snap_roas = float(kpis_snap.get("ROAS", 0))
+        else:
+            # Fallback para snapshots antigos (soma das campanhas ativas)
+            snap_invest = float(pd.to_numeric(camp_snap["Investimento"], errors="coerce").fillna(0).sum())
+            snap_receita = float(pd.to_numeric(camp_snap["Receita"], errors="coerce").fillna(0).sum())
+            snap_roas = snap_receita / snap_invest if snap_invest > 0 else 0
         
         delta_invest = invest_ads - snap_invest
         delta_receita = receita_ads - snap_receita
