@@ -1110,7 +1110,7 @@ def compare_snapshots(df_current: pd.DataFrame, df_reference: pd.DataFrame) -> p
         
     comparison["Evolucao_Status"] = comparison.apply(check_status_improvement, axis=1)
     
-    return compariso
+    return comparison
 
 def build_ads_panel(
     pat: pd.DataFrame,
