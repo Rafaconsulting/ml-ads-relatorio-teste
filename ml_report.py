@@ -398,6 +398,12 @@ def compare_snapshots_anuncio(df_atual: pd.DataFrame, df_snapshot: pd.DataFrame)
     }
     df_snapshot_renamed = df_snapshot.rename(columns=snap_cols_map)
 
+    # Padroniza ID para string para evitar erro de merge entre object e int64
+    df_atual = df_atual.copy()
+    df_snapshot_renamed = df_snapshot_renamed.copy()
+    df_atual["ID"] = df_atual["ID"].astype(str).str.strip()
+    df_snapshot_renamed["ID"] = df_snapshot_renamed["ID"].astype(str).str.strip()
+
     # Merge pelo ID do anúncio (MLB)
     df_merged = df_atual.merge(
         df_snapshot_renamed,

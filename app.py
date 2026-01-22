@@ -747,15 +747,15 @@ def main():
         st.divider()
         executar = st.button("Gerar relatório", use_container_width=True)
         
-        # Botão para salvar o novo snapshot
+        # Checkbox para decidir se quer baixar o snapshot automaticamente
         st.divider()
-        salvar_snapshot = st.button("Salvar Snapshot V2", use_container_width=True, disabled=not executar)
+        baixar_snapshot_auto = st.checkbox("Baixar Snapshot V2 automaticamente", value=True)
 
     if not (organico_file and patrocinados_file and campanhas_file):
         st.info("Envie os 3 arquivos na barra lateral para liberar o relatório.")
         return
 
-    if not executar and not salvar_snapshot:
+    if not executar:
         st.warning("Quando estiver pronto, clique em Gerar relatório.")
         return
 
@@ -791,24 +791,29 @@ def main():
         ads_panel_comp = ml.compare_snapshots_anuncio(ads_panel, anuncio_snap)
 
         # -------------------------
-        # Snapshot V2 - Salvamento
+        # Snapshot V2 - Salvamento Automático
         # -------------------------
-        if salvar_snapshot:
+        if baixar_snapshot_auto:
             try:
                 # Gera um nome de arquivo único
                 filename = f"snapshot_ml_ads_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
                 snapshot_path = os.path.join(os.getcwd(), filename)
                 ml.save_snapshot_v2(camp_strat, ads_panel, snapshot_path)
-                st.success(f"Snapshot V2 salvo com sucesso: {filename}")
-                st.download_button(
-                    label="Baixar Snapshot V2",
+                
+                # Para download automático no Streamlit, usamos o download_button 
+                # mas ele precisa ser clicado pelo usuário. 
+                # Como alternativa de "auto-download", exibimos ele com destaque no topo.
+                st.sidebar.success(f"Snapshot V2 preparado!")
+                st.sidebar.download_button(
+                    label="📥 CLIQUE AQUI PARA BAIXAR SNAPSHOT",
                     data=open(snapshot_path, "rb").read(),
                     file_name=filename,
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    use_container_width=True
+                    use_container_width=True,
+                    key="auto_download_btn"
                 )
             except Exception as e:
-                st.error(f"Erro ao salvar o Snapshot V2: {e}")
+                st.sidebar.error(f"Erro ao preparar Snapshot: {e}")
 
 
 
