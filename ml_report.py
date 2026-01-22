@@ -312,7 +312,7 @@ def save_snapshot_v2(df_campanha_estrategica, df_anuncio_estrategico, snapshot_p
             df_kpis = pd.DataFrame([kpis_globais])
             df_kpis.to_excel(writer, sheet_name='KPIs_Globais', index=False)
 
-    return snapshot_pathth
+    return snapshot_path
 
 
 def load_snapshot_v2(snapshot_file) -> tuple[pd.DataFrame, pd.DataFrame, dict]:

@@ -1179,12 +1179,13 @@ def main():
         delta_roas = roas_val - snap_roas
         
         # Formatação de deltas para evitar "R$ -0,00" ou "0,00x" quando idênticos
+        # Aumentamos a tolerância para R$ 1,00 para evitar ruídos de arredondamento de centavos em grandes volumes
         def fmt_delta_money(val):
-            if abs(val) < 0.01: return None
+            if val is None or abs(val) < 1.0: return None
             return fmt_money_br(val)
             
         def fmt_delta_roas(val):
-            if abs(val) < 0.01: return None
+            if val is None or abs(val) < 0.01: return None
             return f"{val:+.2f}x"
 
         c_cols[0].metric("💰 Investimento", fmt_money_br(invest_ads), delta=fmt_delta_money(delta_invest), delta_color="inverse")
