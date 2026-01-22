@@ -952,32 +952,13 @@ def main():
     st.divider()
 
     # -------------------------
-    # Painel geral (com comparação)
+    # Painel geral
     # -------------------------
-    with st.expander("Painel Geral de Campanhas (Comparativo)", expanded=True):
-        st.subheader("Evolução das Campanhas")
-        if camp_snap is not None and not camp_snap.empty:
-            st.info("Comparando com Snapshot de Referência.")
-            
-            # Exibe a migração de quadrantes
-            migracao_counts = camp_strat_disp["Migracao_Quadrante"].value_counts().reset_index()
-            migracao_counts.columns = ["Migração", "Contagem"]
-            st.dataframe(migracao_counts, use_container_width=True)
-
-            # Prepara a tabela de comparação para exibição
-            cols_to_show = [
-                "Nome", "Quadrante", "Migracao_Quadrante", "Acao_Recomendada", 
-                "Investimento", "Delta_Investimento", "Receita", "Delta_Receita", 
-                "ROAS_Real", "Delta_ROAS", "ROAS_Real_Snap", "Acao_Recomendada_Snap"
-            ]
-            camp_comp_view = prepare_df_for_view(camp_strat_disp[[c for c in cols_to_show if c in camp_strat_disp.columns]], drop_cpi_cols=True, drop_roas_generic=False)
-            st.dataframe(format_table_br(camp_comp_view), use_container_width=True)
-        else:
-            st.warning("Nenhum Snapshot de Referência carregado para comparação.")
-            panel_raw = ml.build_control_panel(camp_strat)
-            panel_raw = replace_acos_obj_with_roas_obj(panel_raw)
-            panel_view = prepare_df_for_view(panel_raw, drop_cpi_cols=True, drop_roas_generic=False)
-            st.dataframe(format_table_br(panel_view), use_container_width=True)
+    with st.expander("Painel Geral de Campanhas", expanded=True):
+        panel_raw = ml.build_control_panel(camp_strat)
+        panel_raw = replace_acos_obj_with_roas_obj(panel_raw)
+        panel_view = prepare_df_for_view(panel_raw, drop_cpi_cols=True, drop_roas_generic=False)
+        st.dataframe(format_table_br(panel_view), use_container_width=True)
 
     st.divider()
 
@@ -993,37 +974,16 @@ def main():
     st.divider()
 
     # -------------------------
-    # Nível de anúncio (Patrocinados) - com comparação
+    # Nível de anúncio (Patrocinados)
     # -------------------------
-    with st.expander("🎯 Análise Tática por Anúncio (Ads) - Comparativo", expanded=False):
-        if ads_panel_comp is None or (hasattr(ads_panel_comp, "empty") and ads_panel_comp.empty):
+    with st.expander("🎯 Análise Tática por Anúncio (Ads)", expanded=False):
+        if ads_panel is None or (hasattr(ads_panel, "empty") and ads_panel.empty):
             st.info("Sem dados de anúncios patrocinados para analisar.")
         else:
             # KPIs rápidos do bloco
-            total_ads = int(len(ads_panel_comp))
+            total_ads = int(len(ads_panel))
             n_pausar = int(len(ads_pausar)) if ads_pausar is not None else 0
             n_vencedores = int(len(ads_vencedores)) if ads_vencedores is not None else 0
-
-            if anuncio_snap is not None and not anuncio_snap.empty:
-                st.subheader("Evolução dos Anúncios (MLB)")
-                
-                # Exibe a migração de status
-                migracao_counts_ads = ads_panel_comp["Migracao_Status"].value_counts().reset_index()
-                migracao_counts_ads.columns = ["Migração", "Contagem"]
-                st.dataframe(migracao_counts_ads, use_container_width=True)
-
-                # Prepara a tabela de comparação para exibição
-                cols_to_show_ads = [
-                    "ID", "Titulo", "Campanha", "Status_Anuncio", "Migracao_Status", 
-                    "Investimento", "Delta_Investimento", "Receita", "Delta_Receita", 
-                    "ROAS_Real", "Delta_ROAS", "ROAS_Real_Snap", "Acao_Anuncio", "Acao_Anuncio_Snap"
-                ]
-                ads_comp_view = prepare_df_for_view(ads_panel_comp[[c for c in cols_to_show_ads if c in ads_panel_comp.columns]], drop_cpi_cols=True, drop_roas_generic=False)
-                st.dataframe(format_table_br(ads_comp_view), use_container_width=True)
-            else:
-                st.warning("Nenhum Snapshot de Referência carregado para comparação a nível de anúncio.")
-                # Se não tem snapshot, exibe o painel normal
-                st.subheader("Análise Tática por Anúncio (Ads)")
             n_fotos = int(len(ads_otim_fotos)) if ads_otim_fotos is not None else 0
             n_kw = int(len(ads_otim_keywords)) if ads_otim_keywords is not None else 0
             n_oferta = int(len(ads_otim_oferta)) if ads_otim_oferta is not None else 0
@@ -1185,7 +1145,48 @@ def main():
 
     st.divider()
     
-    # A seção de snapshot e comparação antiga foi removida para unificação com o Snapshot V2 na barra lateral.
+    # -------------------------
+    # Seção Dedicada: Evolução e Resultados (Comparativo)
+    # -------------------------
+    if camp_snap is not None and not camp_snap.empty:
+        st.divider()
+        st.header("📈 Evolução e Resultados (Comparativo)")
+        st.success("Snapshot de referência detectado! Analisando evolução das campanhas e anúncios...")
+        
+        tab_ev_camp, tab_ev_ads = st.tabs(["📊 Evolução de Campanhas", "🎯 Evolução de Anúncios (MLB)"])
+        
+        with tab_ev_camp:
+            st.subheader("Migração de Quadrantes")
+            migracao_counts = camp_strat_disp["Migracao_Quadrante"].value_counts().reset_index()
+            migracao_counts.columns = ["Migração", "Contagem"]
+            st.dataframe(migracao_counts, use_container_width=True)
+
+            st.subheader("Tabela Comparativa de Campanhas")
+            cols_to_show = [
+                "Nome", "Quadrante", "Migracao_Quadrante", "Acao_Recomendada", 
+                "Investimento", "Delta_Investimento", "Receita", "Delta_Receita", 
+                "ROAS_Real", "Delta_ROAS", "ROAS_Real_Snap", "Acao_Recomendada_Snap"
+            ]
+            camp_comp_view = prepare_df_for_view(camp_strat_disp[[c for c in cols_to_show if c in camp_strat_disp.columns]], drop_cpi_cols=True, drop_roas_generic=False)
+            st.dataframe(format_table_br(camp_comp_view), use_container_width=True)
+
+        with tab_ev_ads:
+            if anuncio_snap is not None and not anuncio_snap.empty:
+                st.subheader("Migração de Status de Anúncios")
+                migracao_counts_ads = ads_panel_disp["Migracao_Status"].value_counts().reset_index()
+                migracao_counts_ads.columns = ["Migração", "Contagem"]
+                st.dataframe(migracao_counts_ads, use_container_width=True)
+
+                st.subheader("Tabela Comparativa de Anúncios (MLB)")
+                cols_to_show_ads = [
+                    "ID", "Titulo", "Campanha", "Status_Anuncio", "Migracao_Status", 
+                    "Investimento", "Delta_Investimento", "Receita", "Delta_Receita", 
+                    "ROAS_Real", "Delta_ROAS", "ROAS_Real_Snap", "Acao_Anuncio", "Acao_Anuncio_Snap"
+                ]
+                ads_comp_view = prepare_df_for_view(ads_panel_disp[[c for c in cols_to_show_ads if c in ads_panel_disp.columns]], drop_cpi_cols=True, drop_roas_generic=False)
+                st.dataframe(format_table_br(ads_comp_view), use_container_width=True)
+            else:
+                st.info("O snapshot carregado não contém dados detalhados de anúncios para comparação.")
 
 
 if __name__ == "__main__":
