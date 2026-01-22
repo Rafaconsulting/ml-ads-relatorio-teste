@@ -326,14 +326,16 @@ def load_snapshot_v2(snapshot_file) -> tuple[pd.DataFrame, pd.DataFrame, dict]:
         camp_snap = pd.read_excel(snapshot_file, sheet_name='Campanhas_Snapshot')
         anuncio_snap = pd.read_excel(snapshot_file, sheet_name='Anuncios_Snapshot')
         
-        kpis_snap = {}
+        kpis_snap = None
         try:
+            # Tenta ler a aba de KPIs Globais
             df_kpis = pd.read_excel(snapshot_file, sheet_name='KPIs_Globais')
             if not df_kpis.empty:
-                kpis_snap = df_kpis.iloc[0].to_dict()
-        except:
+                # Converte todos os valores para float para garantir paridade
+                kpis_snap = {k: float(v) if isinstance(v, (int, float, str)) else v for k, v in df_kpis.iloc[0].to_dict().items()}
+        except Exception as e:
             # Fallback para snapshots antigos que não tinham essa aba
-            pass
+            print(f"Aviso: Aba KPIs_Globais não encontrada no snapshot. Usando fallback. ({e})")
             
         return camp_snap, anuncio_snap, kpis_snap
     except Exception as e:

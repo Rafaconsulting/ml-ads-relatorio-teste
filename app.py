@@ -1161,18 +1161,19 @@ def main():
         
         # KPIs Comparativos Globais
         st.subheader("Resumo de Performance (Antes vs. Depois)")
-        c_cols = st.columns(4)
         
         # Priorizamos os KPIs globais salvos no snapshot para garantir paridade total
-        if kpis_snap:
+        if kpis_snap and isinstance(kpis_snap, dict) and "Investimento Ads (R$)" in kpis_snap:
             snap_invest = float(kpis_snap.get("Investimento Ads (R$)", 0))
             snap_receita = float(kpis_snap.get("Receita Ads (R$)", 0))
             snap_roas = float(kpis_snap.get("ROAS", 0))
+            st.sidebar.info("✅ Usando KPIs Globais do Snapshot")
         else:
             # Fallback para snapshots antigos (soma das campanhas ativas)
             snap_invest = float(pd.to_numeric(camp_snap["Investimento"], errors="coerce").fillna(0).sum())
             snap_receita = float(pd.to_numeric(camp_snap["Receita"], errors="coerce").fillna(0).sum())
             snap_roas = snap_receita / snap_invest if snap_invest > 0 else 0
+            st.sidebar.warning("⚠️ Usando Fallback (Soma de Campanhas)")
         
         delta_invest = invest_ads - snap_invest
         delta_receita = receita_ads - snap_receita
@@ -1188,6 +1189,7 @@ def main():
             if val is None or abs(val) < 0.01: return None
             return f"{val:+.2f}x"
 
+        c_cols = st.columns(4)
         c_cols[0].metric("💰 Investimento", fmt_money_br(invest_ads), delta=fmt_delta_money(delta_invest), delta_color="inverse")
         c_cols[1].metric("📈 Receita", fmt_money_br(receita_ads), delta=fmt_delta_money(delta_receita))
         c_cols[2].metric("🎯 ROAS", f"{roas_val:.2f}x", delta=fmt_delta_roas(delta_roas))
