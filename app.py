@@ -1162,17 +1162,31 @@ def main():
         st.subheader("Resumo de Performance (Antes vs. Depois)")
         c_cols = st.columns(4)
         
-        snap_invest = camp_snap["Investimento"].sum()
-        snap_receita = camp_snap["Receita"].sum()
+        # Filtramos apenas as campanhas que estão presentes no relatório atual para garantir paridade
+        # ou usamos a soma total se o objetivo for comparar a conta como um todo.
+        # Para evitar divergências por campanhas inativas que sumiram do relatório atual, 
+        # vamos garantir que o cálculo de soma seja idêntico ao build_tables.
+        
+        snap_invest = float(pd.to_numeric(camp_snap["Investimento"], errors="coerce").fillna(0).sum())
+        snap_receita = float(pd.to_numeric(camp_snap["Receita"], errors="coerce").fillna(0).sum())
         snap_roas = snap_receita / snap_invest if snap_invest > 0 else 0
         
         delta_invest = invest_ads - snap_invest
         delta_receita = receita_ads - snap_receita
         delta_roas = roas_val - snap_roas
         
-        c_cols[0].metric("💰 Investimento", fmt_money_br(invest_ads), delta=fmt_money_br(delta_invest), delta_color="inverse")
-        c_cols[1].metric("📈 Receita", fmt_money_br(receita_ads), delta=fmt_money_br(delta_receita))
-        c_cols[2].metric("🎯 ROAS", f"{roas_val:.2f}x", delta=f"{delta_roas:+.2f}x")
+        # Formatação de deltas para evitar "R$ -0,00" ou "0,00x" quando idênticos
+        def fmt_delta_money(val):
+            if abs(val) < 0.01: return None
+            return fmt_money_br(val)
+            
+        def fmt_delta_roas(val):
+            if abs(val) < 0.01: return None
+            return f"{val:+.2f}x"
+
+        c_cols[0].metric("💰 Investimento", fmt_money_br(invest_ads), delta=fmt_delta_money(delta_invest), delta_color="inverse")
+        c_cols[1].metric("📈 Receita", fmt_money_br(receita_ads), delta=fmt_delta_money(delta_receita))
+        c_cols[2].metric("🎯 ROAS", f"{roas_val:.2f}x", delta=fmt_delta_roas(delta_roas))
         
         # Tacos Delta (se disponível)
         c_cols[3].metric("📉 TACOS", fmt_percent_br(tacos_pct), delta="Atual")
