@@ -1024,6 +1024,8 @@ def build_tables(
         "ROAS": roas_total,
         "TACOS": tacos,
         "Faturamento total (R$)": faturamento_total,
+        "Impressões Totais": float(pd.to_numeric(camp_agg_all["Impressões"], errors="coerce").fillna(0).sum()),
+        "Cliques Totais": float(pd.to_numeric(camp_agg_all["Cliques"], errors="coerce").fillna(0).sum()),
     }
     ads_panel = build_ads_panel(
         pat,

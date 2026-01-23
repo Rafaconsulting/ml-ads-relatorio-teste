@@ -650,17 +650,61 @@ def render_treemap_chart(df):
         values="Investimento",
         color="ROAS_Real",
         color_continuous_scale="RdYlGn",
-        title="Alocacao de Investimento por Campanha (Tamanho = Investimento, Cor = ROAS)",
+        title="Distribuição de Investimento por Quadrante"
+    )
+    fig.update_layout(
         template="plotly_dark",
-        color_continuous_midpoint=5,
-        hover_name="Nome"
+        margin=dict(l=10, r=10, t=40, b=10)
+    )
+    st.plotly_chart(fig, use_container_width=True)
+
+def render_funnel_chart(kpis):
+    """Gera um gráfico de funil estético e minimalista."""
+    if not kpis:
+        return
+        
+    # Extração de dados
+    imp = float(kpis.get("Impressões Totais", 0))
+    clk = float(kpis.get("Cliques Totais", 0))
+    vendas = float(kpis.get("Vendas Ads", 0))
+    
+    if imp == 0:
+        return
+
+    # Cálculo de taxas
+    ctr = (clk / imp * 100) if imp > 0 else 0
+    cvr = (vendas / clk * 100) if clk > 0 else 0
+    
+    # Dados para o funil (Estético: larguras fixas para evitar design estranho)
+    stages = ["Impressões", "Cliques", "Vendas"]
+    
+    fig = go.Figure(go.Funnel(
+        y = stages,
+        x = [100, 70, 40], # Larguras fixas para estética "SaaS"
+        textinfo = "text",
+        text = [
+            f"<b>{stages[0]}</b><br>{fmt_int_br(imp)}",
+            f"<b>{stages[1]}</b><br>{fmt_int_br(clk)}<br><span style='font-size:10px'>CTR: {ctr:.2f}%</span>",
+            f"<b>{stages[2]}</b><br>{fmt_int_br(vendas)}<br><span style='font-size:10px'>CVR: {cvr:.2f}%</span>"
+        ],
+        marker = {"color": ["#E1E1E1", "#B0B0B0", "#404040"]}, # Tons de cinza minimalistas
+        connector = {"line": {"color": "#E1E1E1", "width": 1}}
+    ))
+    
+    fig.update_layout(
+        title_text = "Funil de Conversão Ads",
+        title_x = 0.5,
+        margin = dict(l=20, r=20, t=50, b=20),
+        height = 350,
+        paper_bgcolor='rgba(0,0,0,0)',
+        plot_bgcolor='rgba(0,0,0,0)',
+        showlegend=False,
+        template="plotly_dark"
     )
     
-    fig.update_traces(textposition="middle center", textfont_size=10)
-    fig.update_layout(
-        margin=dict(l=20, r=20, t=40, b=20),
-        coloraxis_colorbar=dict(title="ROAS")
-    )
+    # Remove eixos para ficar minimalista
+    fig.update_xaxes(visible=False)
+    
     st.plotly_chart(fig, use_container_width=True)
 
 def main():
@@ -964,13 +1008,16 @@ def main():
     # Gráficos de Análise
     # -------------------------
     st.header("Análise Visual de Performance")
-    col_g1, col_g2 = st.columns(2)
+    col_g1, col_g2, col_g3 = st.columns([1, 1, 1.2])
     
     with col_g1:
         render_pareto_chart(camp_strat)
     
     with col_g2:
         render_treemap_chart(camp_strat)
+        
+    with col_g3:
+        render_funnel_chart(kpis)
 
     st.divider()
 
