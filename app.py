@@ -659,7 +659,7 @@ def render_treemap_chart(df):
     st.plotly_chart(fig, use_container_width=True)
 
 def render_funnel_chart(kpis):
-    """Gera um gráfico de funil estético e minimalista."""
+    """Gera um gráfico de funil moderno, estético e minimalista."""
     if not kpis:
         return
         
@@ -678,24 +678,31 @@ def render_funnel_chart(kpis):
     # Dados para o funil (Estético: larguras fixas para evitar design estranho)
     stages = ["Impressões", "Cliques", "Vendas"]
     
+    # Cores modernas (Escala de cinzas profissionais com destaque sutil)
+    colors = ["#2C3E50", "#34495E", "#1ABC9C"] # Azul escuro SaaS para o topo, Verde suave para conversão final
+    
     fig = go.Figure(go.Funnel(
         y = stages,
-        x = [100, 70, 40], # Larguras fixas para estética "SaaS"
+        x = [100, 75, 50], # Larguras fixas para estética moderna
         textinfo = "text",
         text = [
-            f"<b>{stages[0]}</b><br>{fmt_int_br(imp)}",
-            f"<b>{stages[1]}</b><br>{fmt_int_br(clk)}<br><span style='font-size:10px'>CTR: {ctr:.2f}%</span>",
-            f"<b>{stages[2]}</b><br>{fmt_int_br(vendas)}<br><span style='font-size:10px'>CVR: {cvr:.2f}%</span>"
+            f"<span style='font-size:14px; font-weight:bold;'>{stages[0]}</span><br><span style='font-size:18px;'>{fmt_int_br(imp)}</span>",
+            f"<span style='font-size:14px; font-weight:bold;'>{stages[1]}</span><br><span style='font-size:18px;'>{fmt_int_br(clk)}</span><br><span style='font-size:12px; color:#BDC3C7;'>CTR: {ctr:.2f}%</span>",
+            f"<span style='font-size:14px; font-weight:bold;'>{stages[2]}</span><br><span style='font-size:18px;'>{fmt_int_br(vendas)}</span><br><span style='font-size:12px; color:#BDC3C7;'>CVR: {cvr:.2f}%</span>"
         ],
-        marker = {"color": ["#E1E1E1", "#B0B0B0", "#404040"]}, # Tons de cinza minimalistas
-        connector = {"line": {"color": "#E1E1E1", "width": 1}}
+        marker = {
+            "color": colors,
+            "line": {"width": [2, 2, 2], "color": "white"}
+        },
+        connector = {"line": {"color": "#7F8C8D", "width": 1, "dash": "dot"}}
     ))
     
     fig.update_layout(
-        title_text = "Funil de Conversão Ads",
+        title_text = "Funil de Conversão Estratégico",
+        title_font = dict(size=20, color="#ECF0F1"),
         title_x = 0.5,
-        margin = dict(l=20, r=20, t=50, b=20),
-        height = 350,
+        margin = dict(l=150, r=150, t=80, b=40), # Mais margem lateral para o funil não ficar "esticado"
+        height = 450,
         paper_bgcolor='rgba(0,0,0,0)',
         plot_bgcolor='rgba(0,0,0,0)',
         showlegend=False,
@@ -704,6 +711,7 @@ def render_funnel_chart(kpis):
     
     # Remove eixos para ficar minimalista
     fig.update_xaxes(visible=False)
+    fig.update_yaxes(visible=False) # Remove nomes laterais para usar o texto interno
     
     st.plotly_chart(fig, use_container_width=True)
 
@@ -1008,16 +1016,13 @@ def main():
     # Gráficos de Análise
     # -------------------------
     st.header("Análise Visual de Performance")
-    col_g1, col_g2, col_g3 = st.columns([1, 1, 1.2])
+    col_g1, col_g2 = st.columns(2)
     
     with col_g1:
         render_pareto_chart(camp_strat)
     
     with col_g2:
         render_treemap_chart(camp_strat)
-        
-    with col_g3:
-        render_funnel_chart(kpis)
 
     st.divider()
 
@@ -1030,6 +1035,9 @@ def main():
         panel_view = prepare_df_for_view(panel_raw, drop_cpi_cols=True, drop_roas_generic=False)
         st.dataframe(format_table_br(panel_view), use_container_width=True)
 
+    # Funil de Vendas abaixo do painel para maior destaque
+    st.divider()
+    render_funnel_chart(kpis)
     st.divider()
 
     # -------------------------
