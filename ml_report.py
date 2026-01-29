@@ -1149,10 +1149,11 @@ def _write_dashboard_sheet(writer: pd.ExcelWriter, kpis: Dict[str, Any], camp_st
         worksheet.write(row, 5, val, fmt)
         
     # Taxas do Funil (CTR e CVR)
+    # F7 = Impressões, F8 = Cliques, F9 = Vendas
     worksheet.write(9, 4, 'CTR (Taxa de Clique)', label_format)
-    worksheet.write_formula(9, 5, '=F7/F6', value_pct_format)
+    worksheet.write_formula(9, 5, '=F8/F7', value_pct_format)
     worksheet.write(10, 4, 'CVR (Taxa de Conv.)', label_format)
-    worksheet.write_formula(10, 5, '=F8/F7', value_pct_format)
+    worksheet.write_formula(10, 5, '=F9/F8', value_pct_format)
     
     # --- BLOCO 3: RESUMO DE AÇÕES ---
     worksheet.merge_range('B13:C13', ' ✕ RESUMO DE AÇÕES', subtitle_format)
