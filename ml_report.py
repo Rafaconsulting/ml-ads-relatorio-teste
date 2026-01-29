@@ -1093,77 +1093,93 @@ def _write_sheet_with_formatting(writer: pd.ExcelWriter, df: pd.DataFrame, sheet
             worksheet.set_column(col_num, col_num, None, formats[col_name])
 
 def _write_dashboard_sheet(writer: pd.ExcelWriter, kpis: Dict[str, Any], camp_strat: pd.DataFrame, camp_strat_comp: pd.DataFrame | None = None):
-    """Cria a aba de Dashboard Executivo."""
+    """Cria a aba de Dashboard Executivo com layout premium."""
     workbook = writer.book
     worksheet = workbook.add_worksheet("DASHBOARD_EXEC")
+    worksheet.hide_gridlines(2) # Esconde as linhas de grade para um visual limpo
     
-    # Formatos
-    title_format = workbook.add_format({'bold': True, 'font_size': 16, 'font_color': '#34495E'})
-    kpi_label_format = workbook.add_format({'bold': True, 'font_size': 12, 'font_color': '#2C3E50'})
-    kpi_value_format = workbook.add_format({'bold': True, 'font_size': 20, 'font_color': '#1ABC9C', 'num_format': '#,##0.00'})
-    kpi_value_int_format = workbook.add_format({'bold': True, 'font_size': 20, 'font_color': '#1ABC9C', 'num_format': '#,##0'})
+    # Formatos Premium
+    title_format = workbook.add_format({'bold': True, 'font_size': 18, 'font_color': '#2C3E50', 'bottom': 2, 'bottom_color': '#3498DB'})
+    subtitle_format = workbook.add_format({'bold': True, 'font_size': 13, 'font_color': '#34495E', 'bg_color': '#ECF0F1', 'border': 1, 'border_color': '#BDC3C7'})
+    label_format = workbook.add_format({'font_size': 11, 'font_color': '#7F8C8D', 'valign': 'vcenter'})
+    value_money_format = workbook.add_format({'bold': True, 'font_size': 14, 'font_color': '#27AE60', 'num_format': 'R$ #,##0.00', 'valign': 'vcenter'})
+    value_int_format = workbook.add_format({'bold': True, 'font_size': 14, 'font_color': '#2980B9', 'num_format': '#,##0', 'valign': 'vcenter'})
+    value_roas_format = workbook.add_format({'bold': True, 'font_size': 14, 'font_color': '#8E44AD', 'num_format': '0.00"x"', 'valign': 'vcenter'})
+    value_pct_format = workbook.add_format({'bold': True, 'font_size': 12, 'font_color': '#2C3E50', 'num_format': '0.00%', 'valign': 'vcenter'})
     
-    # Configuração da Planilha
-    worksheet.set_column('A:A', 30)
-    worksheet.set_column('B:B', 20)
-    worksheet.set_column('C:C', 30)
-    worksheet.set_column('D:D', 20)
+    # Configuração de Colunas
+    worksheet.set_column('A:A', 2)   # Margem esquerda
+    worksheet.set_column('B:B', 25)  # Rótulos Coluna 1
+    worksheet.set_column('C:C', 20)  # Valores Coluna 1
+    worksheet.set_column('D:D', 5)   # Espaçador central
+    worksheet.set_column('E:E', 25)  # Rótulos Coluna 2
+    worksheet.set_column('F:F', 20)  # Valores Coluna 2
     
-    # Título
-    worksheet.write('A1', 'Relatório Executivo de Performance Ads', title_format)
-    worksheet.write('A2', f"Data de Geração: {datetime.now().strftime('%d/%m/%Y %H:%M')}", workbook.add_format({'font_size': 10}))
+    # Título Principal
+    worksheet.merge_range('B2:F2', 'RELATÓRIO EXECUTIVO DE PERFORMANCE ADS', title_format)
+    worksheet.write('B3', f"Gerado em: {datetime.now().strftime('%d/%m/%Y %H:%M')}", workbook.add_format({'font_size': 9, 'italic': True, 'font_color': '#95A5A6'}))
     
-    # KPIs Globais
-    worksheet.write('A4', 'KPIs Globais', kpi_label_format)
+    # --- BLOCO 1: KPIs GLOBAIS ---
+    worksheet.merge_range('B5:C5', ' ◈ KPIs GLOBAIS', subtitle_format)
     
-    # Investimento
-    worksheet.write('A5', 'Investimento Ads (R$)', kpi_label_format)
-    worksheet.write_number('B5', kpis.get("Investimento Ads (R$)", 0), kpi_value_format)
+    metrics_left = [
+        ('Investimento Ads', kpis.get("Investimento Ads (R$)", 0), value_money_format),
+        ('Receita Ads', kpis.get("Receita Ads (R$)", 0), value_money_format),
+        ('ROAS Médio', kpis.get("ROAS", 0), value_roas_format),
+        ('Vendas Totais', kpis.get("Vendas Ads", 0), value_int_format)
+    ]
     
-    # Receita
-    worksheet.write('A6', 'Receita Ads (R$)', kpi_label_format)
-    worksheet.write_number('B6', kpis.get("Receita Ads (R$)", 0), kpi_value_format)
+    for i, (label, val, fmt) in enumerate(metrics_left):
+        row = 6 + i
+        worksheet.write(row, 1, label, label_format)
+        worksheet.write(row, 2, val, fmt)
+        
+    # --- BLOCO 2: FUNIL DE VENDAS ---
+    worksheet.merge_range('E5:F5', ' ◎ FUNIL DE VENDAS', subtitle_format)
     
-    # ROAS
-    worksheet.write('A7', 'ROAS', kpi_label_format)
-    worksheet.write_number('B7', kpis.get("ROAS", 0), workbook.add_format({'num_format': '0.00x', 'bold': True, 'font_size': 20, 'font_color': '#1ABC9C'}))
+    metrics_right = [
+        ('Impressões', kpis.get("Impressões Totais", 0), value_int_format),
+        ('Cliques', kpis.get("Cliques Totais", 0), value_int_format),
+        ('Vendas', kpis.get("Vendas Ads", 0), value_int_format)
+    ]
     
-    # Vendas
-    worksheet.write('A8', 'Vendas Ads', kpi_label_format)
-    worksheet.write_number('B8', kpis.get("Vendas Ads", 0), kpi_value_int_format)
+    for i, (label, val, fmt) in enumerate(metrics_right):
+        row = 6 + i
+        worksheet.write(row, 4, label, label_format)
+        worksheet.write(row, 5, val, fmt)
+        
+    # Taxas do Funil (CTR e CVR)
+    worksheet.write(9, 4, 'CTR (Taxa de Clique)', label_format)
+    worksheet.write_formula(9, 5, '=F7/F6', value_pct_format)
+    worksheet.write(10, 4, 'CVR (Taxa de Conv.)', label_format)
+    worksheet.write_formula(10, 5, '=F8/F7', value_pct_format)
     
-    # Funil de Vendas
-    worksheet.write('C4', 'Funil de Vendas', kpi_label_format)
-    worksheet.write('C5', 'Impressões', kpi_label_format)
-    worksheet.write_number('D5', kpis.get("Impressões Totais", 0), kpi_value_int_format)
-    worksheet.write('C6', 'Cliques', kpi_label_format)
-    worksheet.write_number('D6', kpis.get("Cliques Totais", 0), kpi_value_int_format)
-    worksheet.write('C7', 'CTR', kpi_label_format)
-    worksheet.write_formula('D7', '=D6/D5', workbook.add_format({'bold': True, 'font_size': 14, 'font_color': '#2C3E50', 'num_format': '0.00%'}))
-    worksheet.write('C8', 'Vendas', kpi_label_format)
-    worksheet.write_number('D8', kpis.get("Vendas Ads", 0), kpi_value_int_format)
-    worksheet.write('C9', 'CVR', kpi_label_format)
-    worksheet.write_formula('D9', '=D8/D6', workbook.add_format({'bold': True, 'font_size': 14, 'font_color': '#2C3E50', 'num_format': '0.00%'}))
-    
-    # Resumo de Ações (Baseado no Sumário Executivo)
-    worksheet.write('A11', 'Resumo de Ações', title_format)
+    # --- BLOCO 3: RESUMO DE AÇÕES ---
+    worksheet.merge_range('B13:C13', ' ✕ RESUMO DE AÇÕES', subtitle_format)
     
     q_counts = camp_strat["Quadrante"].value_counts()
     q_hemorragia = q_counts.get("HEMORRAGIA", 0)
     q_escala = q_counts.get("ESCALA_ORCAMENTO", 0)
     
-    worksheet.write('A12', f"⚡ Campanhas para Escalar: {q_escala}", workbook.add_format({'font_color': '#1ABC9C'}))
-    worksheet.write('A13', f"⊘ Campanhas em Hemorragia: {q_hemorragia}", workbook.add_format({'font_color': '#E74C3C'}))
+    worksheet.write(14, 1, 'Campanhas para Escalar', label_format)
+    worksheet.write(14, 2, q_escala, workbook.add_format({'bold': True, 'font_color': '#27AE60', 'font_size': 12}))
+    worksheet.write(15, 1, 'Campanhas em Hemorragia', label_format)
+    worksheet.write(15, 2, q_hemorragia, workbook.add_format({'bold': True, 'font_color': '#E74C3C', 'font_size': 12}))
     
-    # Comparativo (se houver)
+    # --- BLOCO 4: EVOLUÇÃO ESTRATÉGICA ---
     if camp_strat_comp is not None and not camp_strat_comp.empty:
-        worksheet.write('C11', 'Evolução vs. Snapshot', title_format)
+        worksheet.merge_range('E13:F13', ' 📈 EVOLUÇÃO VS SNAPSHOT', subtitle_format)
         
         migracao_melhora = camp_strat_comp[camp_strat_comp["Migracao_Quadrante"].str.contains("HEMORRAGIA PARA ESTÁVEL|HEMORRAGIA PARA ESCALA|ESTÁVEL PARA ESCALA", na=False)].shape[0] if "Migracao_Quadrante" in camp_strat_comp.columns else 0
         migracao_piora = camp_strat_comp[camp_strat_comp["Migracao_Quadrante"].str.contains("ESTÁVEL PARA HEMORRAGIA|ESCALA PARA HEMORRAGIA", na=False)].shape[0] if "Migracao_Quadrante" in camp_strat_comp.columns else 0
         
-        worksheet.write('C12', f"Melhoria de Quadrante: {migracao_melhora}", workbook.add_format({'font_color': '#1ABC9C'}))
-        worksheet.write('C13', f"Piora de Quadrante: {migracao_piora}", workbook.add_format({'font_color': '#E74C3C'}))
+        worksheet.write(14, 4, 'Melhoria de Quadrante', label_format)
+        worksheet.write(14, 5, migracao_melhora, workbook.add_format({'bold': True, 'font_color': '#27AE60', 'font_size': 12}))
+        worksheet.write(15, 4, 'Piora de Quadrante', label_format)
+        worksheet.write(15, 5, migracao_piora, workbook.add_format({'bold': True, 'font_color': '#E74C3C', 'font_size': 12}))
+    else:
+        worksheet.merge_range('E13:F13', ' 📈 EVOLUÇÃO', subtitle_format)
+        worksheet.merge_range('E14:F15', 'Nenhum snapshot de referência carregado para comparação.', workbook.add_format({'font_size': 10, 'italic': True, 'font_color': '#BDC3C7', 'align': 'center', 'valign': 'vcenter'}))
 
 
 def gerar_excel(kpis, camp_agg, pause, enter, scale, acos, camp_strat, ads_panel=None, camp_strat_comp=None, daily=None, **kwargs) -> bytes:
