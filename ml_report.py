@@ -1,5 +1,11 @@
 import pandas as pd
 from io import BytesIO
+import pandas as pd
+import numpy as np
+import re
+from datetime import datetime
+from typing import Any, Dict, List, Tuple
+import xlsxwriter
 import unicodedata
 import re
 
@@ -1055,45 +1061,197 @@ def build_tables(
     return kpis, pause, enter, scale, acos, camp_strat, ads_panel, ads_pausar, ads_vencedores, ads_otim_fotos, ads_otim_keywords, ads_otim_oferta
 
 
-def gerar_excel(kpis, camp_agg, pause, enter, scale, acos, camp_strat, daily=None) -> bytes:
-    # Se for um snapshot simplificado, gera um Excel basico
-    is_snapshot = "Data_Snapshot" in camp_strat.columns
+def _write_sheet_with_formatting(writer: pd.ExcelWriter, df: pd.DataFrame, sheet_name: str, formats: Dict[str, xlsxwriter.format.Format]):
+    """Escreve um DataFrame em uma planilha com formatação profissional."""
+    df.to_excel(writer, sheet_name=sheet_name, index=False, startrow=1, header=False)
     
+    workbook = writer.book
+    worksheet = writer.sheets[sheet_name]
+    
+    # 1. Formato do Cabeçalho
+    header_format = workbook.add_format({
+        'bold': True,
+        'text_wrap': True,
+        'valign': 'top',
+        'fg_color': '#F2F2F2',
+        'border': 1,
+        'border_color': '#D9D9D9'
+    })
+    
+    # 2. Escreve o cabeçalho com o formato
+    for col_num, value in enumerate(df.columns.values):
+        worksheet.write(0, col_num, value, header_format)
+        
+    # 3. Aplica formatação de coluna e largura
+    for col_num, col_name in enumerate(df.columns):
+        # Largura da coluna
+        max_len = max(df[col_name].astype(str).map(len).max(), len(col_name))
+        worksheet.set_column(col_num, col_num, min(max_len + 2, 40)) # Limita a largura máxima
+        
+        # Formato de número
+        if col_name in formats:
+            worksheet.set_column(col_num, col_num, None, formats[col_name])
+
+def _write_dashboard_sheet(writer: pd.ExcelWriter, kpis: Dict[str, Any], camp_strat: pd.DataFrame, camp_strat_comp: pd.DataFrame | None = None):
+    """Cria a aba de Dashboard Executivo."""
+    workbook = writer.book
+    worksheet = workbook.add_worksheet("DASHBOARD_EXEC")
+    
+    # Formatos
+    title_format = workbook.add_format({'bold': True, 'font_size': 16, 'font_color': '#34495E'})
+    kpi_label_format = workbook.add_format({'bold': True, 'font_size': 12, 'font_color': '#2C3E50'})
+    kpi_value_format = workbook.add_format({'bold': True, 'font_size': 20, 'font_color': '#1ABC9C', 'num_format': '#,##0.00'})
+    kpi_value_int_format = workbook.add_format({'bold': True, 'font_size': 20, 'font_color': '#1ABC9C', 'num_format': '#,##0'})
+    
+    # Configuração da Planilha
+    worksheet.set_column('A:A', 30)
+    worksheet.set_column('B:B', 20)
+    worksheet.set_column('C:C', 30)
+    worksheet.set_column('D:D', 20)
+    
+    # Título
+    worksheet.write('A1', 'Relatório Executivo de Performance Ads', title_format)
+    worksheet.write('A2', f"Data de Geração: {datetime.now().strftime('%d/%m/%Y %H:%M')}", workbook.add_format({'font_size': 10}))
+    
+    # KPIs Globais
+    worksheet.write('A4', 'KPIs Globais', kpi_label_format)
+    
+    # Investimento
+    worksheet.write('A5', 'Investimento Ads (R$)', kpi_label_format)
+    worksheet.write_number('B5', kpis.get("Investimento Ads (R$)", 0), kpi_value_format)
+    
+    # Receita
+    worksheet.write('A6', 'Receita Ads (R$)', kpi_label_format)
+    worksheet.write_number('B6', kpis.get("Receita Ads (R$)", 0), kpi_value_format)
+    
+    # ROAS
+    worksheet.write('A7', 'ROAS', kpi_label_format)
+    worksheet.write_number('B7', kpis.get("ROAS", 0), roas_format) # Usando roas_format
+    
+    # Vendas
+    worksheet.write('A8', 'Vendas Ads', kpi_label_format)
+    worksheet.write_number('B8', kpis.get("Vendas Ads", 0), kpi_value_int_format)
+    
+    # Funil de Vendas
+    worksheet.write('C4', 'Funil de Vendas', kpi_label_format)
+    worksheet.write('C5', 'Impressões', kpi_label_format)
+    worksheet.write_number('D5', kpis.get("Impressões Totais", 0), kpi_value_int_format)
+    worksheet.write('C6', 'Cliques', kpi_label_format)
+    worksheet.write_number('D6', kpis.get("Cliques Totais", 0), kpi_value_int_format)
+    worksheet.write('C7', 'CTR', kpi_label_format)
+    worksheet.write_formula('D7', '=D6/D5', workbook.add_format({'bold': True, 'font_size': 14, 'font_color': '#2C3E50', 'num_format': '0.00%'}))
+    worksheet.write('C8', 'Vendas', kpi_label_format)
+    worksheet.write_number('D8', kpis.get("Vendas Ads", 0), kpi_value_int_format)
+    worksheet.write('C9', 'CVR', kpi_label_format)
+    worksheet.write_formula('D9', '=D8/D6', workbook.add_format({'bold': True, 'font_size': 14, 'font_color': '#2C3E50', 'num_format': '0.00%'}))
+    
+    # Resumo de Ações (Baseado no Sumário Executivo)
+    worksheet.write('A11', 'Resumo de Ações', title_format)
+    
+    q_counts = camp_strat["Quadrante"].value_counts()
+    q_hemorragia = q_counts.get("HEMORRAGIA", 0)
+    q_escala = q_counts.get("ESCALA_ORCAMENTO", 0)
+    
+    worksheet.write('A12', f"⚡ Campanhas para Escalar: {q_escala}", workbook.add_format({'font_color': '#1ABC9C'}))
+    worksheet.write('A13', f"⊘ Campanhas em Hemorragia: {q_hemorragia}", workbook.add_format({'font_color': '#E74C3C'}))
+    
+    # Comparativo (se houver)
+    if camp_strat_comp is not None and not camp_strat_comp.empty:
+        worksheet.write('C11', 'Evolução vs. Snapshot', title_format)
+        
+        migracao_melhora = camp_strat_comp[camp_strat_comp["Migracao_Quadrante"].str.contains("HEMORRAGIA PARA ESTÁVEL|HEMORRAGIA PARA ESCALA|ESTÁVEL PARA ESCALA", na=False)].shape[0] if "Migracao_Quadrante" in camp_strat_comp.columns else 0
+        migracao_piora = camp_strat_comp[camp_strat_comp["Migracao_Quadrante"].str.contains("ESTÁVEL PARA HEMORRAGIA|ESCALA PARA HEMORRAGIA", na=False)].shape[0] if "Migracao_Quadrante" in camp_strat_comp.columns else 0
+        
+        worksheet.write('C12', f"Melhoria de Quadrante: {migracao_melhora}", workbook.add_format({'font_color': '#1ABC9C'}))
+        worksheet.write('C13', f"Piora de Quadrante: {migracao_piora}", workbook.add_format({'font_color': '#E74C3C'}))
+
+
+def gerar_excel(kpis, camp_agg, pause, enter, scale, acos, camp_strat, ads_panel, camp_strat_comp=None, daily=None) -> bytes:
+    """Gera o relatório Excel com formatação profissional usando xlsxwriter."""
+    
+    # Formatos de número comuns
     out = BytesIO()
-    with pd.ExcelWriter(out, engine="openpyxl") as writer:
+    with pd.ExcelWriter(out, engine="xlsxwriter") as writer:
+        workbook = writer.book
+        
+        # Formatos de número
+        money_format = workbook.add_format({'num_format': 'R$ #,##0.00'})
+        percent_format = workbook.add_format({'num_format': '0.00%'})
+        roas_format = workbook.add_format({'num_format': '0.00x'})
+        int_format = workbook.add_format({'num_format': '#,##0'})
+        
+        # Mapeamento de formatos por nome de coluna
+        formats_map = {
+            "Investimento": money_format,
+            "Receita": money_format,
+            "ROAS_Real": roas_format,
+            "ROAS_Objetivo": roas_format,
+            "ROAS_Campanha": roas_format,
+            "ROAS_Ref": roas_format,
+            "ACOS_Real_pct": percent_format,
+            "CVR_pct": percent_format,
+            "CTR_pct": percent_format,
+            "Vendas": int_format,
+            "Cliques": int_format,
+            "Impressoes": int_format,
+            "Invest_Ref": money_format,
+            "Receita_Ref": money_format,
+            "Delta_Invest": money_format,
+            "Delta_ROAS": roas_format,
+            "Pct_Invest_Campanha": percent_format,
+        }
+        
+        # Se for um snapshot, gera um Excel básico (apenas a matriz)
+        is_snapshot = "Data_Snapshot" in camp_strat.columns
+        
         if is_snapshot:
-            camp_strat.to_excel(writer, index=False, sheet_name="Campanhas Estrategicas")
+            _write_sheet_with_formatting(writer, camp_strat, "Campanhas Estrategicas", formats_map)
+            
+            # Se for um snapshot V2, inclui a aba de KPIs Globais
+            if "KPIs_Globais" in camp_strat.columns:
+                kpis_df = camp_strat[camp_strat["Nome"] == "KPIs_Globais"].drop(columns=["Nome", "Data_Snapshot"]).iloc[0]
+                kpis_df = pd.DataFrame([kpis_df])
+                _write_sheet_with_formatting(writer, kpis_df, "KPIs_Globais", formats_map)
+                
         else:
+            # 1. Aba Dashboard Executivo
+            _write_dashboard_sheet(writer, kpis, camp_strat, camp_strat_comp)
+            
+            # 2. Abas de Dados e Ações
             diagnosis = build_executive_diagnosis(camp_strat, daily=daily)
             highlights = build_opportunity_highlights(camp_strat)
             plan7 = build_7_day_plan(camp_strat)
             panel = build_control_panel(camp_strat)
 
+            # DataFrames para exportação
+            sheets_to_write = {
+                "PAINEL_GERAL": panel,
+                "MATRIZ_CPI": camp_strat,
+                "ANUNCIOS_TACTICO": ads_panel,
+                "LOCOMOTIVAS": highlights["Locomotivas"],
+                "MINAS_LIMITADAS": highlights["Minas"],
+                "PLANO_7_DIAS": plan7,
+                "PAUSAR_CAMPANHAS": pause,
+                "ENTRAR_EM_ADS": enter,
+                "ESCALAR_ORCAMENTO": scale,
+                "BAIXAR_ROAS": acos,
+                "BASE_CAMPANHAS_AGG": camp_agg,
+            }
+            
+            # Escreve todas as abas
+            for sheet_name, df in sheets_to_write.items():
+                if df is not None and not df.empty:
+                    _write_sheet_with_formatting(writer, df, sheet_name, formats_map)
+            
+            # Aba de Comparativo (se houver)
+            if camp_strat_comp is not None and not camp_strat_comp.empty:
+                _write_sheet_with_formatting(writer, camp_strat_comp, "COMPARATIVO_CAMPANHAS", formats_map)
+            
+            # Abas de dados brutos (se existirem)
+            # diag_df, resumo, daily (mantidos para compatibilidade, mas sem formatação avançada por enquanto)
             resumo = pd.DataFrame([kpis])
-            diag_df = pd.DataFrame([{
-                "Investimento": diagnosis["Investimento"],
-                "Receita": diagnosis["Receita"],
-                "Vendas": diagnosis["Vendas"],
-                "ROAS": diagnosis["ROAS"],
-                "ACOS_real": diagnosis["ACOS_real"],
-                "Veredito": diagnosis["Veredito"],
-                "Trend_cpc_proxy": diagnosis["Tendencias"].get("cpc_proxy_up", 0),
-                "Trend_ticket": diagnosis["Tendencias"].get("ticket_down", 0),
-                "Trend_roas": diagnosis["Tendencias"].get("roas_down", 0),
-            }])
-
-            diag_df.to_excel(writer, index=False, sheet_name="DIAGNOSTICO_EXEC")
-            resumo.to_excel(writer, index=False, sheet_name="RESUMO")
-            panel.to_excel(writer, index=False, sheet_name="PAINEL_GERAL")
-            camp_strat.to_excel(writer, index=False, sheet_name="MATRIZ_CPI")
-            highlights["Locomotivas"].to_excel(writer, index=False, sheet_name="LOCOMOTIVAS")
-            highlights["Minas"].to_excel(writer, index=False, sheet_name="MINAS_LIMITADAS")
-            plan7.to_excel(writer, index=False, sheet_name="PLANO_7_DIAS")
-            pause.to_excel(writer, index=False, sheet_name="PAUSAR_CAMPANHAS")
-            enter.to_excel(writer, index=False, sheet_name="ENTRAR_EM_ADS")
-            scale.to_excel(writer, index=False, sheet_name="ESCALAR_ORCAMENTO")
-            acos.to_excel(writer, index=False, sheet_name="BAIXAR_ROAS")
-            camp_agg.to_excel(writer, index=False, sheet_name="BASE_CAMPANHAS_AGG")
+            resumo.to_excel(writer, index=False, sheet_name="RESUMO_RAW")
+            
             if daily is not None:
                 daily.to_excel(writer, index=False, sheet_name="SERIE_DIARIA")
                 
