@@ -1166,7 +1166,7 @@ def _write_dashboard_sheet(writer: pd.ExcelWriter, kpis: Dict[str, Any], camp_st
         worksheet.write('C13', f"Piora de Quadrante: {migracao_piora}", workbook.add_format({'font_color': '#E74C3C'}))
 
 
-def gerar_excel(kpis, camp_agg, pause, enter, scale, acos, camp_strat, ads_panel, camp_strat_comp=None, daily=None) -> bytes:
+def gerar_excel(kpis, camp_agg, pause, enter, scale, acos, camp_strat, ads_panel=None, camp_strat_comp=None, daily=None, **kwargs) -> bytes:
     """Gera o relatório Excel com formatação profissional usando xlsxwriter."""
     
     # Formatos de número comuns
