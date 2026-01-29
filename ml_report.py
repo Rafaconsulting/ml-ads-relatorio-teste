@@ -1126,7 +1126,7 @@ def _write_dashboard_sheet(writer: pd.ExcelWriter, kpis: Dict[str, Any], camp_st
     
     # ROAS
     worksheet.write('A7', 'ROAS', kpi_label_format)
-    worksheet.write_number('B7', kpis.get("ROAS", 0), roas_format) # Usando roas_format
+    worksheet.write_number('B7', kpis.get("ROAS", 0), workbook.add_format({'num_format': '0.00x', 'bold': True, 'font_size': 20, 'font_color': '#1ABC9C'}))
     
     # Vendas
     worksheet.write('A8', 'Vendas Ads', kpi_label_format)
