@@ -1198,18 +1198,18 @@ def main():
     # -------------------------
     st.header("Download do Relatório Completo")
     try:
-            excel_bytes = ml.gerar_excel(
-                kpis=kpis,
-                camp_agg=camp_agg,
-                pause=pause,
-                enter=enter,
-                scale=scale,
-                acos=acos,
-                camp_strat=camp_strat,
-                ads_panel=ads_panel,
-                camp_strat_comp=camp_strat_comp,
-                daily=None,
-            )
+        excel_bytes = ml.gerar_excel(
+            kpis=kpis,
+            camp_agg=camp_agg,
+            pause=pause,
+            enter=enter,
+            scale=scale,
+            acos=acos,
+            camp_strat=camp_strat,
+            ads_panel=ads_panel,
+            camp_strat_comp=camp_strat_comp,
+            daily=None,
+        )
 
         st.download_button(
             "Baixar Excel do relatório",
