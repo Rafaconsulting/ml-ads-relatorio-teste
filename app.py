@@ -733,19 +733,27 @@ def main():
         with st.expander("📖 Guia: Como obter os relatórios", expanded=False):
             st.markdown("""
             ### 1. Relatório de Campanhas
-            **Caminho:** 	Publicidade > Relatórios > Tipo de Relatório: Campanhas (Padrão) > Selecionar Período > Agrupamento de Dados: Total do Período.
+            **Caminho:** 	
+            Publicidade > Relatórios > Tipo de Relatório: Campanhas (Padrão) > Selecionar Período > Agrupamento de Dados: Total do Período.
+            
             *Este arquivo traz o resumo consolidado das suas campanhas.*
 
             ### 2. Anúncios Patrocinados
-            **Caminho:** Publicidade > Relatórios > Tipo de Relatório: Anúncios (Padrão) > Selecionar Período > Agrupamento de Dados: Total do Período.
+            **Caminho:** 
+            Publicidade > Relatórios > Tipo de Relatório: Anúncios (Padrão) > Selecionar Período > Agrupamento de Dados: Total do Período.
+            
             *Este arquivo detalha a performance de cada anúncio dentro do Ads.*
 
             ### 3. Desempenho de Anúncios
-            **Caminho:** Métricas > Selecionar o Período > Descer até a sessão Desempenho de anúncios > Baixar relatório > Desempenho dos seus anúncios.
+            **Caminho:** 
+            Métricas > Selecionar o Período > Descer até a sessão Desempenho de anúncios > Baixar relatório > Desempenho dos seus anúncios.
+            
             *Este arquivo é essencial para compararmos o que vende no orgânico vs. pago.*
 
             ### 4. Relatório de Inventário
-            **Caminho:** Anúncios > Alterar pelo Excel > Condições Gerais > Baixar o Excel do Inventário > Selecione os anúncios que você vai baixar > Categorias: Todos > Baixar.
+            **Caminho:** 
+            Anúncios > Alterar pelo Excel > Condições Gerais > Baixar o Excel do Inventário > Selecione os anúncios que você vai baixar > Categorias: Todos > Baixar.
+            
             *Este arquivo é opcional para analisarmos as campanhas com base no estoque*
             
             ---
