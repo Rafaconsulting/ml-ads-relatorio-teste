@@ -729,6 +729,25 @@ def main():
 
     with st.sidebar:
         st.caption(f"Atualizado em {datetime.now().strftime('%d/%m/%Y %H:%M')}")
+        
+        with st.expander("📖 Guia: Como obter os relatórios", expanded=False):
+            st.markdown("""
+            ### 1. Relatório de Campanhas
+            **Caminho:** Publicidade > Campanhas > Exportar (Excel)
+            *Este arquivo traz o resumo consolidado das suas campanhas.*
+
+            ### 2. Anúncios Patrocinados
+            **Caminho:** Publicidade > Anúncios > Exportar (Excel)
+            *Este arquivo detalha a performance de cada anúncio dentro do Ads.*
+
+            ### 3. Desempenho de Anúncios (Orgânico)
+            **Caminho:** Anúncios > Gestão de Anúncios > Relatórios > Desempenho de Anúncios
+            *Este arquivo é essencial para compararmos o que vende no orgânico vs. pago.*
+            
+            ---
+            **Dica:** Baixe sempre o período de **Últimos 30 dias** ou **Mês Anterior** para uma análise mais robusta.
+            """)
+
         st.divider()
 
         st.subheader("Arquivos")
